@@ -177,13 +177,13 @@ CommandResult UserCommunication::handleStatsCommand() {
 
 String UserCommunication::formatStatusBrief(const SystemStatus &sys) const {
   String s = "[Status] ";
-  s += "Sched:" + String(sys.scheduleRunning ? "RUN" : "IDLE") + " ";
-  s += "SMS:"   + String(sys.smsReady      ? "✓" : "✗") + " ";
-  s += "MQTT:"  + String(sys.mqttConnected ? "✓" : "✗") + " ";
-  s += "BLE:"   + String(sys.bleConnected  ? "✓" : "✗") + " ";
-  s += "WiFi:"  + String(sys.wifiConnected ? "✓" : "✗") + " ";
-  s += "PPPoS:" + String(sys.ppposConnected? "✓" : "✗") + " ";
-  s += "Heap:"  + String(sys.freeHeapBytes / 1024) + "KB";
+  s += "Sched:"     + String(sys.scheduleRunning ? "RUN" : "IDLE") + " ";
+  s += "SMS:"       + String(sys.smsReady       ? "OK" : "--") + " ";
+  s += "Data/MQTT:" + String(sys.dataConnected  ? "OK" : "--")
+     + "[" + sys.bearerName + "] ";
+  s += "BT:"        + String(sys.bleConnected   ? "OK" : "--") + " ";
+  s += "LoRa:"      + String(sys.loraUp         ? "OK" : "--") + " ";
+  s += "Heap:"      + String(sys.freeHeapBytes / 1024) + "KB";
   return s;
 }
 
@@ -198,8 +198,8 @@ String UserCommunication::formatStatusText(const SystemStatus &sys) const {
   t += "  BLE:   " + String(sys.bleConnected   ? "✓ Connected" : "✗ Off") + "\n";
   t += "  LoRa:  " + String(sys.loraUp         ? "✓ Active"    : "✗ Off") + "\n";
   t += "NETWORK:\n";
-  t += "  WiFi:  " + String(sys.wifiConnected  ? "✓ Connected" : "✗ Off") + "\n";
-  t += "  PPPoS: " + String(sys.ppposConnected ? "✓ Connected" : "✗ Off") + "\n";
+  t += "  WiFi:  " + String(sys.wifiUp  ? "Up"   : "Down") + "\n";
+  t += "  PPPoS: " + String(sys.ppposUp ? "Up"   : "Down") + "\n";
   t += "  IP:    " + (sys.networkIP.length() ? sys.networkIP : "N/A") + "\n";
   t += "SYSTEM:\n";
   t += "  Uptime:  " + String(sys.uptimeSeconds) + "s\n";
@@ -219,8 +219,8 @@ String UserCommunication::formatStatusJSON(const SystemStatus &sys) const {
      + ",\"mqtt\":"  + String(sys.mqttConnected  ? "true" : "false")
      + ",\"ble\":"   + String(sys.bleConnected   ? "true" : "false")
      + ",\"lora\":"  + String(sys.loraUp         ? "true" : "false") + "},\n";
-  j += "  \"network\": {\"wifi\":"  + String(sys.wifiConnected  ? "true" : "false")
-     + ",\"pppos\":" + String(sys.ppposConnected ? "true" : "false")
+  j += "  \"bearer\": {\"wifi\":" + String(sys.wifiUp  ? "true" : "false")
+     + ",\"pppos\":" + String(sys.ppposUp ? "true" : "false")
      + ",\"ip\":\""  + sys.networkIP + "\"},\n";
   j += "  \"system\": {\"uptimeSec\":" + String(sys.uptimeSeconds)
      + ",\"freeHeap\":"  + String(sys.freeHeapBytes)

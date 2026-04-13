@@ -30,6 +30,8 @@
 #include "Config.h"
 
 // ─── Comm-layer sub-modules (all internal to CommManager) ─────────────────────
+#include "CommConfig.h"
+#include "SerialConfigHandler.h"
 #include "IChannelAdapter.h"
 #include "ChannelAdapters.h"
 #include "ChannelMessage.h"
@@ -141,7 +143,8 @@ private:
   LoRaChannelAdapter  *loraAdapter   = nullptr;
 #endif
 #if ENABLE_SERIAL_COMM
-  SerialChannelAdapter *serialAdapter = nullptr;
+  SerialChannelAdapter  *serialAdapter    = nullptr;
+  SerialConfigHandler   *serialCfgHandler = nullptr;
 #endif
 
   // ── Application state refs — set in begin() ───────────────────────────────
@@ -201,10 +204,10 @@ public:
   // Initialize all communication sub-modules.
   // Must be called once in setup() after storage/config are loaded.
   // Stores refs to schedule state so process() can build SystemStatus.
+  // commCfg.load(prefs) must be called before begin().
   CommManagerStatus begin(std::vector<Schedule> *schedules,
                           bool *scheduleRunning,
-                          bool *scheduleLoaded,
-                          const String &adminPhone);
+                          bool *scheduleLoaded);
 
   // Drive all communication work: poll channels, run background tasks,
   // feed PPP stack, auto-reconnect. Call every loop().

@@ -1,3 +1,5 @@
+#include "Config.h"
+#include "CommConfig.h"
 // CommManager.cpp - Central communication manager
 // All communication concerns live here. MasterController.ino calls only the
 // public API: begin(), process(), notify*(), getStatus().
@@ -169,7 +171,7 @@ bool CommManager::initUserCommunication() {
   // Create and register one adapter per enabled, initialized transport
 #if ENABLE_SMS
   if (initStatus.smsOk) {
-    smsAdapter = new SMSChannelAdapter(modemSMS, SMS_ALERT_PHONE_1);
+    smsAdapter = new SMSChannelAdapter(modemSMS);
     userComm.registerAdapter(smsAdapter);
   }
 #endif
@@ -198,6 +200,11 @@ bool CommManager::initUserCommunication() {
   userComm.registerAdapter(serialAdapter);
 #endif
 
+#if ENABLE_SERIAL_COMM
+  if (!serialCfgHandler)
+    serialCfgHandler = new SerialConfigHandler(prefs);
+#endif
+
   printStepSuccess("UserCommunication");
   initStatus.userCommOk = true; initStatus.successfulModules++;
   return true;
@@ -206,8 +213,7 @@ bool CommManager::initUserCommunication() {
 // ─── begin() ──────────────────────────────────────────────────────────────────
 CommManagerStatus CommManager::begin(std::vector<Schedule> *sched,
                                       bool *running,
-                                      bool *loaded,
-                                      const String &adminPhone) {
+                                      bool *loaded) {
   Serial.println("\n==========================================");
   Serial.println("  COMM MANAGER INITIALIZATION");
   Serial.println("==========================================\n");
@@ -218,7 +224,7 @@ CommManagerStatus CommManager::begin(std::vector<Schedule> *sched,
   scheduleLoaded  = loaded;
 
   // Init UserCommunication with admin phone before adapters are created
-  userComm.init(adminPhone);
+  userComm.init(commCfg.smsPhone1);
 
   // Init order: hardware transports → bearers → network → app-layer → UC
 #if ENABLE_BLE
@@ -292,7 +298,7 @@ void CommManager::pollSMS() {
 #if ENABLE_SMS
   if (!initStatus.smsOk || !modemSMS.isReady()) return;
   modemSMS.processBackground();
-  auto incoming = modemSMS.processIncomingMessages(SMS_ALERT_PHONE_1);
+  auto incoming = modemSMS.processIncomingMessages(commCfg.smsPhone1);
   SystemStatus sys = buildSystemStatus();
   for (auto &sms : incoming) {
     String sender = sms.sender;
@@ -354,6 +360,10 @@ void CommManager::pollSerial() {
   if (line.length() == 0) return;   // No complete line yet
 
   Serial.println("[Serial] ← "" + line + """);
+
+  // Config commands (SET/ENABLE/DISABLE/SHOW/SAVE/RESET CONFIG)
+  // are intercepted here — never reach UserCommunication.
+  if (serialCfgHandler && serialCfgHandler->handle(line)) return;
 
   // Build a reply lambda that echoes the response back to Serial
   auto reply = [](const String &response) {
@@ -443,28 +453,47 @@ SystemStatus CommManager::buildSystemStatus() const {
     for (auto &sch : *schedules) if (sch.enabled) s.enabledSchedules++;
   }
 
-#if ENABLE_BLE
-  s.bleConnected  = initStatus.bleOk  && bleComm.isConnected();
-#endif
-#if ENABLE_LORA
-  s.loraUp        = initStatus.loraOk;
-#endif
-#if ENABLE_WIFI
-  s.wifiConnected = initStatus.wifiOk && wifiComm.isConnected();
-  if (s.wifiConnected) s.networkIP = wifiComm.getIPAddress();
-#endif
-#if ENABLE_PPPOS
-  s.ppposConnected = initStatus.ppposOk && modemPPPoS.isConnected();
-  if (s.ppposConnected) s.networkIP = modemPPPoS.getLocalIP();
-#endif
+  // ── User channels ─────────────────────────────────────────────────────
 #if ENABLE_SMS
-  s.smsReady      = initStatus.smsOk  && modemSMS.isReady();
+  s.smsReady     = initStatus.smsOk && modemSMS.isReady();
 #endif
 #if ENABLE_MQTT
   s.mqttConnected = initStatus.mqttOk && mqtt.isConnected();
+  s.dataConnected = s.mqttConnected;   // Data channel = MQTT reachable
 #endif
+#if ENABLE_BLE
+  s.bleConnected = initStatus.bleOk && bleComm.isConnected();
+#endif
+#if ENABLE_LORA
+  s.loraUp = initStatus.loraOk;
+#endif
+
+  // ── Data bearer detail ────────────────────────────────────────────────
+#if ENABLE_WIFI
+  s.wifiUp = initStatus.wifiOk && wifiComm.isConnected();
+  if (s.wifiUp && s.networkIP.length() == 0)
+    s.networkIP = wifiComm.getIPAddress();
+#endif
+#if ENABLE_PPPOS
+  s.ppposUp = initStatus.ppposOk && modemPPPoS.isConnected();
+  if (s.ppposUp && s.networkIP.length() == 0)
+    s.networkIP = modemPPPoS.getLocalIP();
+#endif
+
+  // Bearer name reflects which bearer is actually up
+#if ENABLE_PPPOS
+  if (s.ppposUp)      s.bearerName = "PPPoS";
+  else
+#endif
+#if ENABLE_WIFI
+  if (s.wifiUp)       s.bearerName = "WiFi";
+  else
+#endif
+                      s.bearerName = "None";
+
+  // ── Services ──────────────────────────────────────────────────────────
 #if ENABLE_HTTP
-  s.httpReady     = initStatus.httpOk && httpComm.isReady();
+  s.httpReady = initStatus.httpOk && httpComm.isReady();
 #endif
 
   return s;

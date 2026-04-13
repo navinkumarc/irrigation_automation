@@ -431,12 +431,9 @@ bool ModemSMS::sendNotification(const String &message, const String &alertKey) {
 #if ENABLE_SMS_ALERTS
   if (!isReady() || !shouldSendAlert(alertKey)) return false;
   bool sent = false;
-#ifdef SMS_ALERT_PHONE_1
-  if (String(SMS_ALERT_PHONE_1).length() > 0 && sendSMS(SMS_ALERT_PHONE_1, message)) sent = true;
-#endif
-#ifdef SMS_ALERT_PHONE_2
-  if (String(SMS_ALERT_PHONE_2).length() > 0 && sendSMS(SMS_ALERT_PHONE_2, message)) sent = true;
-#endif
+  // Use runtime config phones (commCfg) rather than compile-time macros
+  if (commCfg.smsPhone1.length() > 0) sent |= sendSMS(commCfg.smsPhone1, message);
+  if (commCfg.smsPhone2.length() > 0) sent |= sendSMS(commCfg.smsPhone2, message);
   return sent;
 #else
   return false;

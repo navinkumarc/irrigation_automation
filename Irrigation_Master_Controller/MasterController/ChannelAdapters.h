@@ -1,48 +1,54 @@
-// ChannelAdapters.h - Concrete IChannelAdapter implementations
+// ChannelAdapters.h  —  Concrete IChannelAdapter implementations
 //
-// One adapter per transport module. Each adapter:
-//   • Is compiled only when its ENABLE_ flag is set
-//   • Holds a reference to its module (e.g. ModemSMS&)
-//   • Implements isAvailable() by querying the module's ready state
-//   • Implements send() by calling the module's send API
+// Channel model
+// ─────────────
+//   SMS        modem AT mode
+//   Data/MQTT  MQTT over data bearer (WiFi or PPPoS)
+//   Bluetooth  BLE notify / write
+//   LoRa       user broadcast
+//   Serial     always-on config/debug console
 //
-// Adapters are instantiated in CommManager and registered into UserCommunication.
-// UserCommunication never includes these headers — it only knows IChannelAdapter.
+//   WiFi and PPPoS are DATA BEARERS (transport), NOT user channels.
+//   They never appear as IChannelAdapters.
+//
+// Runtime enable/disable is via CommConfig (commCfg).
+// isAvailable() checks BOTH the commCfg runtime flag AND the hardware state.
 
 #ifndef CHANNEL_ADAPTERS_H
 #define CHANNEL_ADAPTERS_H
 
 #include "IChannelAdapter.h"
 #include "Config.h"
+#include "CommConfig.h"
 
 // ─── SMS ──────────────────────────────────────────────────────────────────────
 #if ENABLE_SMS
 #include "ModemSMS.h"
 
 class SMSChannelAdapter : public IChannelAdapter {
-  ModemSMS&   _sms;
-  String      _adminPhone;
+  ModemSMS& _sms;
 public:
-  SMSChannelAdapter(ModemSMS &sms, const String &adminPhone)
-    : _sms(sms), _adminPhone(adminPhone) {}
+  explicit SMSChannelAdapter(ModemSMS &sms) : _sms(sms) {}
 
   const char* channelName() const override { return "SMS"; }
 
-  bool isAvailable() const override { return _sms.isReady(); }
+  bool isAvailable() const override {
+    return commCfg.chSMS && _sms.isReady();
+  }
 
-  // Broadcast to configured admin phones
   bool send(const String &message) override {
     return _sms.sendNotification(message);
   }
 
-  // Reply to a specific sender phone number
   bool sendTo(const String &address, const String &message) override {
     return _sms.sendSMS(address, message);
   }
 };
 #endif // ENABLE_SMS
 
-// ─── MQTT ─────────────────────────────────────────────────────────────────────
+// ─── Data / MQTT ──────────────────────────────────────────────────────────────
+// Bearer (WiFi or PPPoS) is irrelevant here — MQTTComm works the same
+// regardless of which transport provides the IP connection.
 #if ENABLE_MQTT
 #include "MQTTComm.h"
 
@@ -51,26 +57,26 @@ class MQTTChannelAdapter : public IChannelAdapter {
   String    _alertTopic;
 public:
   explicit MQTTChannelAdapter(MQTTComm &mqtt,
-                              const String &alertTopic = MQTT_TOPIC_ALERTS)
+                               const String &alertTopic = MQTT_TOPIC_ALERTS)
     : _mqtt(mqtt), _alertTopic(alertTopic) {}
 
-  const char* channelName() const override { return "MQTT"; }
+  const char* channelName() const override { return "Data/MQTT"; }
 
-  bool isAvailable() const override { return _mqtt.isConnected(); }
+  bool isAvailable() const override {
+    return commCfg.chData && _mqtt.isConnected();
+  }
 
-  // Publish to alert topic
   bool send(const String &message) override {
     return _mqtt.publish(_alertTopic, message);
   }
 
-  // Publish to a specific topic (address = topic string)
-  bool sendTo(const String &address, const String &message) override {
-    return _mqtt.publish(address, message);
+  bool sendTo(const String &topic, const String &message) override {
+    return _mqtt.publish(topic, message);
   }
 };
 #endif // ENABLE_MQTT
 
-// ─── BLE ──────────────────────────────────────────────────────────────────────
+// ─── Bluetooth ────────────────────────────────────────────────────────────────
 #if ENABLE_BLE
 #include "BLEComm.h"
 
@@ -79,9 +85,11 @@ class BLEChannelAdapter : public IChannelAdapter {
 public:
   explicit BLEChannelAdapter(BLEComm &ble) : _ble(ble) {}
 
-  const char* channelName() const override { return "BLE"; }
+  const char* channelName() const override { return "Bluetooth"; }
 
-  bool isAvailable() const override { return _ble.isConnected(); }
+  bool isAvailable() const override {
+    return commCfg.chBluetooth && _ble.isConnected();
+  }
 
   bool send(const String &message) override {
     return _ble.notify(message);
@@ -89,44 +97,41 @@ public:
 };
 #endif // ENABLE_BLE
 
-// ─── LoRa (user-facing broadcast) ────────────────────────────────────────────
-// LoRa is primarily for node communication (handled by NodeCommunication).
-// This adapter covers operator broadcast messages sent over LoRa.
+// ─── LoRa user broadcast ──────────────────────────────────────────────────────
+// Separate from NodeCommunication which handles valve-node protocol.
 #if ENABLE_LORA && ENABLE_LORA_USER_COMM
 #include "LoRaComm.h"
 
 class LoRaChannelAdapter : public IChannelAdapter {
   LoRaComm& _lora;
-  bool      _initialized;
+  bool      _hwReady;
 public:
-  LoRaChannelAdapter(LoRaComm &lora, bool initialized)
-    : _lora(lora), _initialized(initialized) {}
+  LoRaChannelAdapter(LoRaComm &lora, bool hwReady)
+    : _lora(lora), _hwReady(hwReady) {}
 
   const char* channelName() const override { return "LoRa"; }
 
-  bool isAvailable() const override { return _initialized; }
+  bool isAvailable() const override {
+    return commCfg.chLoRa && _hwReady;
+  }
 
   bool send(const String &message) override {
-    if (!_initialized) return false;
+    if (!_hwReady) return false;
     _lora.sendRaw(message);
     return true;
   }
 };
 #endif // ENABLE_LORA && ENABLE_LORA_USER_COMM
 
-// ─── Serial (USB / UART0 debug console) ──────────────────────────────────────
-// Always available as long as Serial has been initialised in setup().
-// Inbound: CommManager::pollSerial() reads complete lines and delivers them
-//          as ChannelMessages. The reply lambda writes back to Serial.
-// Outbound: send() writes a prefixed line to Serial.
-// No ENABLE_ guard needed — Serial is always present on Arduino/ESP32.
-// The ENABLE_SERIAL_COMM flag in Config.h controls whether CommManager
-// polls and registers this adapter.
+// ─── Serial  —  always-on config/debug console ───────────────────────────────
+// Cannot be disabled. isAvailable() always returns true.
+// Receives operator commands AND configuration commands (SerialConfigHandler
+// intercepts SET/ENABLE/DISABLE/SHOW CONFIG before UserCommunication sees them).
 #if ENABLE_SERIAL_COMM
 
 class SerialChannelAdapter : public IChannelAdapter {
   HardwareSerial& _serial;
-  String          _lineBuffer;    // Accumulates characters until newline
+  String          _buf;    // line accumulator
 
 public:
   explicit SerialChannelAdapter(HardwareSerial &serial = Serial)
@@ -134,43 +139,35 @@ public:
 
   const char* channelName() const override { return "Serial"; }
 
-  // Serial is always available once Serial.begin() has been called.
+  // Serial is unconditionally available — never gated by commCfg
   bool isAvailable() const override { return true; }
 
-  // Write an outbound message to the serial console.
   bool send(const String &message) override {
-    _serial.println("[CommMgr→Serial] " + message);
+    _serial.println("[Alert] " + message);
     return true;
   }
 
-  // sendTo is not meaningful for Serial — falls back to send().
-  bool sendTo(const String &address, const String &message) override {
-    (void)address;
+  bool sendTo(const String &, const String &message) override {
     return send(message);
   }
 
-  // Read available bytes into the line buffer.
-  // Returns a complete line (without trailing CR/LF) when one is ready,
-  // or an empty String if no complete line is available yet.
-  // Call this from CommManager::pollSerial() every loop iteration.
+  // Non-blocking line reader. Call every loop(). Returns "" until '\n'.
   String readLine() {
     while (_serial.available()) {
       char c = (char)_serial.read();
-      if (c == '
-') {
-        String line = _lineBuffer;
-        _lineBuffer = "";
+      if (c == '\n') {
+        String line = _buf;
+        _buf = "";
         line.trim();
-        return line;      // Caller gets the complete line
-      } else if (c != '') {
-        _lineBuffer += c;
+        return line;
+      } else if (c != '\r') {
+        _buf += c;
       }
     }
-    return "";            // No complete line yet
+    return "";
   }
 };
 
 #endif // ENABLE_SERIAL_COMM
-
 
 #endif // CHANNEL_ADAPTERS_H

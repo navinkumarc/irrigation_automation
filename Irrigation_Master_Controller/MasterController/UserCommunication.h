@@ -49,26 +49,36 @@ struct CommandResult {
 };
 
 // ─── System status snapshot ───────────────────────────────────────────────────
-// Populated by CommManager::buildSystemStatus() and passed into status methods.
-// UserCommunication formats and delivers it — does not gather it itself.
+// SystemStatus — flat snapshot of the four user channel categories.
+// Populated by CommManager::buildSystemStatus().
+// UserCommunication formats and delivers it; it never queries modules directly.
 struct SystemStatus {
+  // ── Schedule ──────────────────────────────────────────────────────────────
   bool     scheduleRunning    = false;
   String   currentScheduleId;
   int      enabledSchedules   = 0;
   int      totalSchedules     = 0;
 
-  bool     loraUp             = false;
-  bool     bleConnected       = false;
-  bool     wifiConnected      = false;
-  bool     ppposConnected     = false;
-  bool     mqttConnected      = false;
-  bool     smsReady           = false;
-  bool     httpReady          = false;
+  // ── User channels ─────────────────────────────────────────────────────────
+  bool     smsReady           = false;   // SMS channel (modem AT mode)
+  bool     dataConnected      = false;   // Data channel (MQTT broker reachable)
+  bool     bleConnected       = false;   // Bluetooth channel
+  bool     loraUp             = false;   // LoRa channel
 
+  // ── Data bearer detail (informational, not a user channel) ────────────────
+  bool     wifiUp             = false;   // WiFi bearer connected
+  bool     ppposUp            = false;   // PPPoS bearer connected
+  String   bearerName;                   // "WiFi" | "PPPoS" | "None"
+  String   networkIP;                    // IP from active bearer
+
+  // ── Services ──────────────────────────────────────────────────────────────
+  bool     mqttConnected      = false;   // MQTT broker connected
+  bool     httpReady          = false;   // HTTP server listening
+
+  // ── System ────────────────────────────────────────────────────────────────
   uint32_t freeHeapBytes      = 0;
   uint32_t totalHeapBytes     = 0;
   uint32_t uptimeSeconds      = 0;
-  String   networkIP;
 };
 
 // ─── UserCommunication ────────────────────────────────────────────────────────

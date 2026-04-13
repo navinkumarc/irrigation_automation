@@ -120,8 +120,10 @@ void setup() {
   // ── Communication init ───────────────────────────────────────────────────
   // One call initializes every transport, network router, node comm,
   // user comm, and channel adapters. The .ino knows nothing about internals.
-  auto commStatus = commMgr.begin(&schedules, &scheduleRunning, &scheduleLoaded,
-                                   SMS_ALERT_PHONE_1);
+  // Load runtime config from NVS (must happen before commMgr.begin)
+  commCfg.load(prefs);
+
+  auto commStatus = commMgr.begin(&schedules, &scheduleRunning, &scheduleLoaded);
 
   if (commStatus.successfulModules < commStatus.totalModules) {
     Serial.printf("⚠ CommManager: %d/%d modules initialized\n",
