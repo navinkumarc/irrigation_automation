@@ -13,8 +13,8 @@
 //   • Does not control which channel is active
 //
 // Loose coupling:
-//   Inbound:  CommSetup channel processors call userComm.onMessageReceived()
-//   Outbound: UserCommunication calls IChannelAdapter::send() — knows nothing
+//   Inbound:  CommManager channel pollers call onMessageReceived()
+//   Outbound: calls IChannelAdapter::send() — knows nothing
 //             about the underlying module
 //
 // Channel adapters are registered via registerAdapter().
@@ -49,7 +49,7 @@ struct CommandResult {
 };
 
 // ─── System status snapshot ───────────────────────────────────────────────────
-// Populated externally by CommSetup / main loop and passed into status methods.
+// Populated by CommManager::buildSystemStatus() and passed into status methods.
 // UserCommunication formats and delivers it — does not gather it itself.
 struct SystemStatus {
   bool     scheduleRunning    = false;
@@ -120,14 +120,14 @@ public:
   void init(const String &adminPhoneNumber);
 
   // Register an outbound channel adapter.
-  // Called by CommSetup after each transport module is initialised.
+  // Called by CommManager during initUserCommunication().
   // adapter must remain valid for the lifetime of UserCommunication.
   void registerAdapter(IChannelAdapter *adapter);
 
   // Register the callback used to execute NODE <id> <cmd> commands.
   void setNodeCommandCallback(NodeCommandCallback cb);
 
-  // ── Inbound — called by CommSetup channel processors ─────────────────────
+  // ── Inbound — called by CommManager channel pollers ──────────────────────
 
   // Primary entry point: receive a message from any channel.
   // Parses the command, executes it, and replies via msg.reply() if available.
@@ -175,7 +175,7 @@ public:
   String getHealthStatus()  const;
 };
 
-// Global instance
-extern UserCommunication userComm;
+// Note: UserCommunication instance lives inside CommManager.
+// Access via commMgr.getUserComm() if needed externally.
 
 #endif // USER_COMMUNICATION_H

@@ -65,6 +65,7 @@ public:
   String getNodeStatus(int nodeId);
 };
 
-extern NodeCommunication nodeComm;
+// NodeCommunication instance lives inside CommManager.
+// extern NodeCommunication nodeComm;
 
 #endif

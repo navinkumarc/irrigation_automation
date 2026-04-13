@@ -6,7 +6,7 @@
 //   • Implements isAvailable() by querying the module's ready state
 //   • Implements send() by calling the module's send API
 //
-// Adapters are instantiated in CommSetup and registered into UserCommunication.
+// Adapters are instantiated in CommManager and registered into UserCommunication.
 // UserCommunication never includes these headers — it only knows IChannelAdapter.
 
 #ifndef CHANNEL_ADAPTERS_H

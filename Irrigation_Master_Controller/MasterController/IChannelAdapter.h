@@ -2,7 +2,7 @@
 //
 // UserCommunication uses this interface exclusively to send messages.
 // It never holds raw module pointers (ModemSMS*, MQTTComm*, etc.).
-// Each concrete adapter wraps one transport module and lives in CommSetup.
+// Each concrete adapter wraps one transport module and lives in CommManager.
 //
 // Loose-coupling contract:
 //   • UserCommunication calls only send() and isAvailable()

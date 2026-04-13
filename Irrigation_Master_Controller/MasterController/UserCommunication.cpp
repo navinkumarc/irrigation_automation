@@ -24,7 +24,7 @@ void UserCommunication::setNodeCommandCallback(NodeCommandCallback cb) {
 }
 
 // ─── onMessageReceived() ──────────────────────────────────────────────────────
-// Primary inbound entry point.  CommSetup channel processors call this;
+// Primary inbound entry point. CommManager channel pollers call this;
 // UserCommunication never polls channels itself.
 void UserCommunication::onMessageReceived(const ChannelMessage &msg,
                                           bool *scheduleRunning,
