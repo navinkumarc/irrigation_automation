@@ -26,10 +26,10 @@ private:
                 int wantNode, const String &wantSched, int wantSeqIndex);
   bool waitForAck(int node, const String &type, const String &sched, 
                   int seqIdx, uint32_t mid, uint32_t timeout);
-  void sendRaw(const String &cmd);
 
 public:
   LoRaComm();
+  void sendRaw(const String &cmd);  // Public: used by LoRaChannelAdapter
   bool init();
   bool sendWithAck(const String &cmdType, int node, const String &schedId,
                    int seqIndex, uint32_t durationMs = 0);

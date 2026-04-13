@@ -1,6 +1,25 @@
-// UserCommunication.h - Centralized user communication and diagnostics
-// All optional communication modules are loosely coupled via #if guards and setters.
-// Removing any module's .h/.cpp files is safe as long as its ENABLE_ flag is 0.
+// UserCommunication.h - User ↔ Controller message exchange
+//
+// Responsibilities (ONLY these):
+//   • Receive inbound ChannelMessages from any channel (SMS / MQTT / BLE / HTTP)
+//   • Parse and execute user commands (schedule control, status, diagnostics)
+//   • Send outbound alerts / responses / events through registered IChannelAdapters
+//   • Maintain system status snapshot for reporting
+//
+// What UserCommunication does NOT do:
+//   • Does not manage channel lifecycle (connect / reconnect / processBackground)
+//   • Does not call any module API directly (ModemSMS, MQTTComm, BLEComm, etc.)
+//   • Does not include any ENABLE_X guarded headers
+//   • Does not control which channel is active
+//
+// Loose coupling:
+//   Inbound:  CommSetup channel processors call userComm.onMessageReceived()
+//   Outbound: UserCommunication calls IChannelAdapter::send() — knows nothing
+//             about the underlying module
+//
+// Channel adapters are registered via registerAdapter().
+// Any number of adapters can be registered; all available ones receive alerts.
+
 #ifndef USER_COMMUNICATION_H
 #define USER_COMMUNICATION_H
 
@@ -8,205 +27,155 @@
 #include <vector>
 #include <functional>
 #include "Config.h"
+#include "IChannelAdapter.h"
+#include "ChannelMessage.h"
 
-// Optional module includes — only compiled when their flag is enabled.
-#if ENABLE_SMS
-  #include "ModemSMS.h"
-#endif
-#if ENABLE_MQTT
-  #include "MQTTComm.h"
-#endif
-#if ENABLE_HTTP
-  #include "HTTPComm.h"
-#endif
-#if ENABLE_BLE
-  #include "BLEComm.h"
-#endif
-#if ENABLE_LORA
-  #include "LoRaComm.h"
-#endif
-#if ENABLE_WIFI
-  #include "WiFiComm.h"
-#endif
-
-// Forward declarations
-class CommSetup;
+// Forward declarations only — no module headers included here
 struct Schedule;
 
-// ─── Result & Status Structures ───────────────────────────────────────────────
+// ─── Callback type for node commands ─────────────────────────────────────────
+// Set by MasterController.ino to route NODE commands to NodeCommunication
+using NodeCommandCallback = std::function<bool(int nodeId, const String &command)>;
 
+// ─── Command result ───────────────────────────────────────────────────────────
 struct CommandResult {
   bool   success;
   String response;
   String commandType;
+
+  CommandResult() : success(false) {}
+  CommandResult(bool ok, const String &type, const String &resp)
+    : success(ok), commandType(type), response(resp) {}
 };
 
-struct SystemStatusReport {
-  bool   bleConnected;
-  bool   loraInitialized;
-  bool   wifiConnected;
-  bool   modemReady;
-  bool   smsReady;
-  bool   mqttConnected;
-  bool   httpReady;
+// ─── System status snapshot ───────────────────────────────────────────────────
+// Populated externally by CommSetup / main loop and passed into status methods.
+// UserCommunication formats and delivers it — does not gather it itself.
+struct SystemStatus {
+  bool     scheduleRunning    = false;
+  String   currentScheduleId;
+  int      enabledSchedules   = 0;
+  int      totalSchedules     = 0;
 
-  String   systemTime;
-  String   uptime;
-  int      successfulSchedules;
-  int      failedSchedules;
-  bool     scheduleRunning;
-  String   currentSchedule;
+  bool     loraUp             = false;
+  bool     bleConnected       = false;
+  bool     wifiConnected      = false;
+  bool     ppposConnected     = false;
+  bool     mqttConnected      = false;
+  bool     smsReady           = false;
+  bool     httpReady          = false;
 
-  uint32_t freeHeap;
-  uint32_t totalHeap;
-
-  String   ipAddress;
-  String   wifiSSID;
-  int      signalStrength;
+  uint32_t freeHeapBytes      = 0;
+  uint32_t totalHeapBytes     = 0;
+  uint32_t uptimeSeconds      = 0;
+  String   networkIP;
 };
-
-typedef std::function<bool(int nodeId, const String &command)> NodeCommandCallback;
 
 // ─── UserCommunication ────────────────────────────────────────────────────────
 
 class UserCommunication {
 private:
-  // Optional module pointers — only declared when their flag is enabled.
-#if ENABLE_SMS
-  ModemSMS  *smsComm;
-#endif
-#if ENABLE_MQTT
-  MQTTComm  *mqttComm;
-#endif
-#if ENABLE_HTTP
-  HTTPComm  *httpComm;
-#endif
-#if ENABLE_BLE
-  BLEComm   *bleComm;
-#endif
-#if ENABLE_LORA
-  LoRaComm  *loraComm;
-#endif
-#if ENABLE_WIFI
-  WiFiComm  *wifiComm;
-#endif
+  // Registered outbound adapters — all available ones receive each alert
+  std::vector<IChannelAdapter*> adapters;
 
-  CommSetup           *commSetup;
-  NodeCommandCallback  nodeCommandCallback;
-  String               adminPhone;
+  // Callback into NodeCommunication for NODE <id> <cmd> commands
+  NodeCommandCallback nodeCommandCallback;
 
-  // Status helpers
-  SystemStatusReport gatherSystemStatus(std::vector<Schedule> *schedules, bool scheduleRunning);
-  String formatStatusAsText(const SystemStatusReport &status);
-  String formatStatusAsJSON(const SystemStatusReport &status);
-  String formatStatusAsBrief(const SystemStatusReport &status);
+  // Admin phone — used by SMS adapter for direct replies
+  String adminPhone;
 
-  // Command handlers
-  CommandResult handleStatusCommand();
+  // ── Command handlers (pure business logic, no channel knowledge) ──────────
+  CommandResult handleStatusCommand    (const SystemStatus &sys);
   CommandResult handleDiagnosticsCommand();
-  CommandResult handleSchedulesCommand(std::vector<Schedule> *schedules);
-  CommandResult handleStopCommand(bool *scheduleRunning, bool *scheduleLoaded);
-  CommandResult handleStartCommand(const String &schedId);
-  CommandResult handleSMSOnCommand(bool *enableSMSBroadcast);
-  CommandResult handleSMSOffCommand(bool *enableSMSBroadcast);
-  CommandResult handleCheckCommand();
-  CommandResult handleNodeCommand(const String &cmd);
-  CommandResult handleHelpCommand();
-  CommandResult handleStatsCommand();
-  CommandResult handleReportCommand();
+  CommandResult handleSchedulesCommand (const SystemStatus &sys);
+  CommandResult handleStopCommand      (bool *scheduleRunning, bool *scheduleLoaded);
+  CommandResult handleStartCommand     (const String &schedId);
+  CommandResult handleCheckCommand     ();
+  CommandResult handleNodeCommand      (const String &args);
+  CommandResult handleHelpCommand      ();
+  CommandResult handleStatsCommand     ();
 
-  CommandResult routeCommand(const String &cmd, std::vector<Schedule> *schedules,
-                             bool *scheduleRunning, bool *scheduleLoaded,
-                             bool *enableSMSBroadcast);
+  CommandResult dispatchCommand(const String &cmd,
+                                bool *scheduleRunning,
+                                bool *scheduleLoaded,
+                                const SystemStatus &sys);
 
-  void sendResponse(const String &response, const String &channel);
-  void sendMultiChannelResponse(const String &response);
+  // ── Outbound helpers ──────────────────────────────────────────────────────
+  // Send to all available adapters
+  void broadcast(const String &message);
+
+  // Send to all adapters except one (used when replying on a specific channel)
+  void broadcastExcept(const String &message, const char *excludeChannel);
+
+  // Format helpers
+  String formatStatusText (const SystemStatus &sys) const;
+  String formatStatusBrief(const SystemStatus &sys) const;
+  String formatStatusJSON (const SystemStatus &sys) const;
 
 public:
   UserCommunication();
 
-  // ── Initialization ────────────────────────────────────────────────────────
-  // Core init — only requires admin phone and optional CommSetup reference.
-  void init(const String &adminPhoneNum, CommSetup *setup = nullptr);
+  // ── Setup ──────────────────────────────────────────────────────────────────
 
-  // Module setters — call after init() for each enabled module.
-  // Each setter is only compiled when its flag is enabled, so removing
-  // the module's files (with the flag off) will not break compilation.
-#if ENABLE_SMS
-  void setSMS(ModemSMS *sms);
-#endif
-#if ENABLE_MQTT
-  void setMQTT(MQTTComm *mqtt);
-#endif
-#if ENABLE_HTTP
-  void setHTTP(HTTPComm *http);
-#endif
-#if ENABLE_BLE
-  void setBLE(BLEComm *ble);
-#endif
-#if ENABLE_LORA
-  void setLoRa(LoRaComm *lora);
-#endif
-#if ENABLE_WIFI
-  void setWiFi(WiFiComm *wifi);
-#endif
+  void init(const String &adminPhoneNumber);
 
-  void setNodeCommandCallback(NodeCommandCallback callback);
+  // Register an outbound channel adapter.
+  // Called by CommSetup after each transport module is initialised.
+  // adapter must remain valid for the lifetime of UserCommunication.
+  void registerAdapter(IChannelAdapter *adapter);
 
-  // ── Diagnostics ───────────────────────────────────────────────────────────
-  void printSystemStatus(std::vector<Schedule> *schedules, bool scheduleRunning);
-  void printBriefStatus(std::vector<Schedule> *schedules, bool scheduleRunning);
-  void printCommStatus();
-  void printSystemDiagnostics();
-  void printNetworkDiagnostics();
-  void printLoRaDiagnostics();
-  void printBLEDiagnostics();
-  void printScheduleStatus(std::vector<Schedule> *schedules, bool scheduleRunning);
+  // Register the callback used to execute NODE <id> <cmd> commands.
+  void setNodeCommandCallback(NodeCommandCallback cb);
 
-  SystemStatusReport getSystemStatus(std::vector<Schedule> *schedules, bool scheduleRunning);
-  String getFormattedStatus(std::vector<Schedule> *schedules, bool scheduleRunning,
-                            const String &format = "text");
-  String getStatusJSON(std::vector<Schedule> *schedules, bool scheduleRunning);
+  // ── Inbound — called by CommSetup channel processors ─────────────────────
 
-  // ── Notifications / Alerts ────────────────────────────────────────────────
-  void broadcastSystemStatus(std::vector<Schedule> *schedules, bool scheduleRunning);
-  void sendAlert(const String &alertMessage, const String &severity = "INFO");
+  // Primary entry point: receive a message from any channel.
+  // Parses the command, executes it, and replies via msg.reply() if available.
+  // Also broadcasts significant responses to all other available adapters.
+  void onMessageReceived(const ChannelMessage &msg,
+                         bool *scheduleRunning,
+                         bool *scheduleLoaded,
+                         const SystemStatus &sys);
 
-  // ── Event Callbacks ───────────────────────────────────────────────────────
-  void notifyScheduleUpdate(const String &scheduleName, const String &status);
-  void onScheduleStarted(const String &scheduleId);
+  // ── Outbound — called by application code ────────────────────────────────
+
+  // Send an alert on all available channels.
+  // severity: "INFO" | "WARNING" | "ERROR"
+  void sendAlert(const String &message, const String &severity = "INFO");
+
+  // Broadcast a status snapshot to all available channels.
+  void broadcastStatus(const SystemStatus &sys);
+
+  // ── Application event hooks ───────────────────────────────────────────────
+
+  void onScheduleStarted  (const String &scheduleId);
   void onScheduleCompleted(const String &scheduleId);
-  void onScheduleFailed(const String &scheduleId, const String &reason);
-  void onValveAction(int nodeId, const String &valve, const String &action);
-  void onSystemError(const String &errorMessage);
-  void onSystemWarning(const String &warningMessage);
+  void onScheduleFailed   (const String &scheduleId, const String &reason);
+  void onValveAction      (int nodeId, const String &valve, const String &action);
+  void onSystemError      (const String &errorMessage);
+  void onSystemWarning    (const String &warningMessage);
+
+  // ── Diagnostics (Serial only — not sent over channels) ───────────────────
+
+  void printAdapterStatus()  const;
+  void printBriefStatus     (const SystemStatus &sys) const;
+  void printSystemStatus    (const SystemStatus &sys) const;
+  void printSystemDiagnostics() const;
+
+  // ── Status text getters ───────────────────────────────────────────────────
+
+  String getStatusText (const SystemStatus &sys) const;
+  String getStatusBrief(const SystemStatus &sys) const;
+  String getStatusJSON (const SystemStatus &sys) const;
+  String getHelpText   () const;
 
   // ── Health ────────────────────────────────────────────────────────────────
-  bool   isSystemHealthy();
-  String getHealthStatus();
 
-  // ── Command Processing ────────────────────────────────────────────────────
-  void processAllChannels(std::vector<Schedule> *schedules, bool *scheduleRunning,
-                          bool *scheduleLoaded, bool *enableSMSBroadcast);
-
-  void processSMSCommands(std::vector<Schedule> *schedules, bool *scheduleRunning,
-                          bool *scheduleLoaded, bool *enableSMSBroadcast);
-  void processLoRaCommands(std::vector<Schedule> *schedules, bool *scheduleRunning,
-                           bool *scheduleLoaded, bool *enableSMSBroadcast);
-  void processMQTTCommands(std::vector<Schedule> *schedules, bool *scheduleRunning,
-                           bool *scheduleLoaded, bool *enableSMSBroadcast);
-  void processWiFiCommands(std::vector<Schedule> *schedules, bool *scheduleRunning,
-                           bool *scheduleLoaded, bool *enableSMSBroadcast);
-  void processHTTPCommands(std::vector<Schedule> *schedules, bool *scheduleRunning,
-                           bool *scheduleLoaded, bool *enableSMSBroadcast);
-  void processBLECommand(int nodeId, const String &command);
-  void processSerialCommand(const String &input, std::vector<Schedule> *schedules,
-                            bool *scheduleRunning, bool *scheduleLoaded);
-  void processMessage(const String &message);
-
-  void sendCommandResponse(const String &command, const CommandResult &result,
-                           const String &channel = "AUTO");
-  String getHelpText();
+  bool   isSystemHealthy() const;
+  String getHealthStatus()  const;
 };
+
+// Global instance
+extern UserCommunication userComm;
 
 #endif // USER_COMMUNICATION_H

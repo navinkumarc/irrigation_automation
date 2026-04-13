@@ -1,6 +1,7 @@
-// IrrigationController.ino - Main sketch
-// All optional communication modules are guarded by their ENABLE_ flag in Config.h.
-// To disable a module: set its flag to 0 (and optionally remove its .h/.cpp files).
+// MasterController.ino - Main sketch
+// Communication modules are initialized and polled by CommSetup.
+// UserCommunication is driven only by CommSetup via ChannelMessage.
+// This file only calls application-level helpers.
 
 #include "Config.h"
 #include "Utils.h"
@@ -14,7 +15,6 @@
 #include "NetworkRouter.h"
 #include "MessageFormats.h"
 
-// Optional module headers — only included when their flag is enabled.
 #if ENABLE_DISPLAY
   #include "DisplayManager.h"
 #endif
@@ -33,6 +33,9 @@
 #if ENABLE_SMS
   #include "ModemSMS.h"
 #endif
+#if ENABLE_PPPOS
+  #include "ModemPPPoS.h"
+#endif
 #if ENABLE_MQTT
   #include "MQTTComm.h"
 #endif
@@ -40,7 +43,7 @@
   #include "HTTPComm.h"
 #endif
 
-// ─── Global Variable Definitions ─────────────────────────────────────────────
+// ─── Global variable definitions ──────────────────────────────────────────────
 SystemConfig          sysConfig;
 std::vector<Schedule> schedules;
 String                currentScheduleId     = "";
@@ -54,49 +57,53 @@ uint32_t              pumpOnBeforeMs        = PUMP_ON_LEAD_DEFAULT_MS;
 uint32_t              pumpOffAfterMs        = PUMP_OFF_DELAY_DEFAULT_MS;
 uint32_t              LAST_CLOSE_DELAY_MS   = LAST_CLOSE_DELAY_MS_DEFAULT;
 uint32_t              DRIFT_THRESHOLD_S     = 300;
-uint32_t              SYNC_CHECK_INTERVAL_MS = 3600000UL;
+uint32_t              SYNC_CHECK_INTERVAL_MS= 3600000UL;
 bool                  ENABLE_SMS_BROADCAST  = true;
 
-// ─── Module Instances — compiled only when their flag is enabled ──────────────
-Preferences      prefs;
-MessageQueue     incomingQueue;
-StorageManager   storage;
-TimeManager      timeManager;
-ScheduleManager  scheduleMgr;
+// ─── Module instances ─────────────────────────────────────────────────────────
+Preferences       prefs;
+MessageQueue      incomingQueue;
+StorageManager    storage;
+TimeManager       timeManager;
+ScheduleManager   scheduleMgr;
 NodeCommunication nodeComm;
 UserCommunication userComm;
-CommSetup        commSetup;
+CommSetup         commSetup;
+NetworkRouter     networkRouter;
 
 #if ENABLE_DISPLAY
-DisplayManager   displayMgr;
+DisplayManager    displayMgr;
 #endif
 #if ENABLE_LORA
-LoRaComm         loraComm;
-bool             loraInitialized = false;
+LoRaComm          loraComm;
+bool              loraInitialized = false;
 #else
-bool             loraInitialized = false;  // Always defined for UserCommunication
+bool              loraInitialized = false;
 #endif
 #if ENABLE_BLE
-BLEComm          bleComm;
+BLEComm           bleComm;
 #endif
 #if ENABLE_WIFI
-WiFiComm         wifiComm;
+WiFiComm          wifiComm;
 #endif
-// ModemBase instance is defined in ModemBase.cpp (extern modemBase)
+// modemBase defined in ModemBase.cpp
 #if ENABLE_SMS
-// ModemSMS instance is defined in ModemSMS.cpp (extern modemSMS)
+// modemSMS defined in ModemSMS.cpp
+#endif
+#if ENABLE_PPPOS
+// modemPPPoS defined in ModemPPPoS.cpp — needs global instance
+ModemPPPoS        modemPPPoS;
 #endif
 #if ENABLE_MQTT
-MQTTComm         mqtt;
+MQTTComm          mqtt;
 #endif
 #if ENABLE_HTTP
-HTTPComm         httpComm;
+HTTPComm          httpComm;
 #endif
 
-// RTC is always present when ENABLE_RTC is set
 #if ENABLE_RTC
   #include <RTClib.h>
-  TwoWire    WireRTC    = TwoWire(1);
+  TwoWire    WireRTC     = TwoWire(1);
   RTC_DS3231 rtc;
   bool       rtcAvailable = false;
 #endif
@@ -105,9 +112,18 @@ CommSetupStatus commStatus;
 
 // ─── Callbacks ────────────────────────────────────────────────────────────────
 
+// BLE raw command → delivered via CommSetup BLE channel processor
 void handleBLECommand(int node, String command) {
   Serial.printf("[MAIN] BLE cmd: node=%d cmd=%s\n", node, command.c_str());
-  userComm.processBLECommand(node, command);
+  // Build a ChannelMessage and deliver to userComm
+  SystemStatus sys = commSetup.buildSystemStatus(&schedules, scheduleRunning);
+  auto reply = [](const String &r) {
+#if ENABLE_BLE
+    bleComm.notify(r);
+#endif
+  };
+  ChannelMessage msg(command, "BLE_NODE_" + String(node), "BLE", reply);
+  userComm.onMessageReceived(msg, &scheduleRunning, &scheduleLoaded, sys);
 }
 
 bool handleNodeCommand(int nodeId, const String &command) {
@@ -123,10 +139,9 @@ void setup() {
   delay(1000);
 
   Serial.println("\n==========================================");
-  Serial.println("  IRRIGATION CONTROLLER v2.0");
+  Serial.println("  IRRIGATION CONTROLLER v3.0");
   Serial.println("==========================================\n");
 
-  // ── Core systems ────────────────────────────────────────────────────────────
   Serial.println("[1/5] Storage...");
   if (storage.init()) Serial.println("      ✓ Storage ready");
 
@@ -137,12 +152,12 @@ void setup() {
   Serial.println("[3/5] Configuration...");
   storage.loadSystemConfig(sysConfig);
   storage.loadAllSchedules(schedules);
-  Serial.println("      ✓ Config loaded");
+  Serial.println("      ✓ Config loaded (" + String(schedules.size()) + " schedules)");
 
 #if ENABLE_DISPLAY
   Serial.println("[4/5] Display...");
   if (displayMgr.init()) {
-    displayMgr.showMessage("Irrigation", "v2.0", "Init...", "");
+    displayMgr.showMessage("Irrigation", "v3.0", "Init...", "");
     Serial.println("      ✓ Display ready");
   }
 #else
@@ -162,8 +177,7 @@ void setup() {
   Serial.println("[5/5] RTC: disabled");
 #endif
 
-  // ── Communication modules ───────────────────────────────────────────────────
-  // initializeAll() only calls init functions for modules whose ENABLE_ flag is set.
+  // ── Communication modules ─────────────────────────────────────────────────
   Serial.println("\n[SETUP] Initializing communication modules...");
   commStatus = commSetup.initializeAll();
 
@@ -172,18 +186,17 @@ void setup() {
       commStatus.successfulModules, commStatus.totalModules);
   }
 
-  // ── BLE callback ────────────────────────────────────────────────────────────
+  // ── BLE command callback ──────────────────────────────────────────────────
 #if ENABLE_BLE
   bleComm.setCommandCallback(handleBLECommand);
   Serial.println("[SETUP] ✓ BLE callback registered");
 #endif
 
-  // ── LoRa initialized flag ───────────────────────────────────────────────────
 #if ENABLE_LORA
   loraInitialized = commStatus.loraOk;
 #endif
 
-  // ── Application modules ─────────────────────────────────────────────────────
+  // ── Application wiring ────────────────────────────────────────────────────
   userComm.setNodeCommandCallback(handleNodeCommand);
   scheduleMgr.init(&userComm);
 
@@ -195,33 +208,25 @@ void setup() {
   Serial.println("✓ SYSTEM READY");
   Serial.println("==========================================\n");
 
-  userComm.printBriefStatus(&schedules, scheduleRunning);
+  // Build initial status and print
+  SystemStatus initSys = commSetup.buildSystemStatus(&schedules, scheduleRunning);
+  userComm.printBriefStatus(initSys);
 }
 
 // ─── Main Loop ────────────────────────────────────────────────────────────────
 
 void loop() {
-  // Background tasks — each compiled only when its module is enabled.
-#if ENABLE_WIFI
-  wifiComm.processBackground();
-#endif
+  // CommSetup drives all channel polling, background work, and
+  // delivers ChannelMessages to UserCommunication
+  commSetup.processChannels(&schedules, &scheduleRunning, &scheduleLoaded);
 
-  // NetworkRouter: feeds PPP stack + detects dropped bearers + auto-reconnect
-  networkRouter.processBackground();
-
-#if ENABLE_MQTT
-  mqtt.processBackground();
-#endif
-
-#if ENABLE_HTTP
-  httpComm.processBackground();
-#endif
-
+  // LoRa node communication
 #if ENABLE_LORA
   loraComm.processIncoming();
   nodeComm.processIncoming();
 #endif
 
+  // BLE liveness check
 #if ENABLE_BLE
   static unsigned long lastBLECheck = 0;
   if (millis() - lastBLECheck > 30000) {
@@ -230,15 +235,11 @@ void loop() {
   }
 #endif
 
-  // Message queue
-  String msg;
-  if (incomingQueue.dequeue(msg)) {
-    Serial.println("[MAIN] Queue: " + msg);
+  // Inbound message queue (LoRa / general)
+  String qMsg;
+  if (incomingQueue.dequeue(qMsg)) {
+    Serial.println("[MAIN] Queue: " + qMsg);
   }
-
-  // Process all enabled communication channels (SMS, MQTT, HTTP, BLE, LoRa).
-  userComm.processAllChannels(&schedules, &scheduleRunning, &scheduleLoaded,
-                              &ENABLE_SMS_BROADCAST);
 
   // Periodic health check (every 60 s)
   static unsigned long lastHealth = 0;
@@ -249,11 +250,12 @@ void loop() {
     }
   }
 
-  // Periodic status report (every 5 min)
+  // Periodic brief status to Serial (every 5 min)
   static unsigned long lastStatus = 0;
   if (millis() - lastStatus > 300000) {
     lastStatus = millis();
-    userComm.printBriefStatus(&schedules, scheduleRunning);
+    SystemStatus sys = commSetup.buildSystemStatus(&schedules, scheduleRunning);
+    userComm.printBriefStatus(sys);
   }
 
 #if ENABLE_DISPLAY
@@ -263,20 +265,25 @@ void loop() {
   vTaskDelay(pdMS_TO_TICKS(10));
 }
 
-// ─── Diagnostic Helpers ───────────────────────────────────────────────────────
+// ─── Application helpers ──────────────────────────────────────────────────────
+
+SystemStatus getCurrentStatus() {
+  return commSetup.buildSystemStatus(&schedules, scheduleRunning);
+}
 
 void printFullSystemDiagnostics() {
   Serial.println("\n==========================================");
   Serial.println("  FULL SYSTEM DIAGNOSTIC");
   Serial.println("==========================================\n");
-  userComm.printSystemStatus(&schedules, scheduleRunning);
-  userComm.printCommStatus();
+  SystemStatus sys = getCurrentStatus();
+  userComm.printSystemStatus(sys);
   userComm.printSystemDiagnostics();
+  commSetup.printStatus();
   Serial.println("==========================================\n");
 }
 
 String getSystemStatusJSON() {
-  return userComm.getStatusJSON(&schedules, scheduleRunning);
+  return userComm.getStatusJSON(getCurrentStatus());
 }
 
 void startSchedule(String scheduleId) {
@@ -287,12 +294,10 @@ void startSchedule(String scheduleId) {
 
 void stopAllSchedules() {
   scheduleRunning = false;
-  if (currentScheduleId.length() > 0) userComm.onScheduleCompleted(currentScheduleId);
+  if (currentScheduleId.length() > 0)
+    userComm.onScheduleCompleted(currentScheduleId);
 }
 
-void notifyValveAction(int nodeId, String valve, String action) {
-  userComm.onValveAction(nodeId, valve, action);
-}
-
-void notifySystemError(String errorMessage)     { userComm.onSystemError(errorMessage);   }
-void notifySystemWarning(String warningMessage) { userComm.onSystemWarning(warningMessage); }
+void notifyValveAction  (int nodeId, String valve, String action) { userComm.onValveAction(nodeId, valve, action); }
+void notifySystemError  (String msg) { userComm.onSystemError(msg);   }
+void notifySystemWarning(String msg) { userComm.onSystemWarning(msg); }

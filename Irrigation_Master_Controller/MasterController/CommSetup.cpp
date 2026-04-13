@@ -1,25 +1,21 @@
-// CommSetup.cpp - Centralized communication module initialization
+// CommSetup.cpp - Communication module initialization and channel polling
 #include "CommSetup.h"
 
 CommSetup *CommSetup::instance = nullptr;
 
-CommSetup::CommSetup() : stepCounter(0) {
-  status.totalModules      = 0;
-  status.successfulModules = 0;
-  instance = this;
-}
+CommSetup::CommSetup() : stepCounter(0) { instance = this; }
 
-void CommSetup::printStepHeader(const String &moduleName) {
-  stepCounter++;
-  Serial.println("[CommSetup] [" + String(stepCounter) + "] " + moduleName);
+// ─── Step logging ─────────────────────────────────────────────────────────────
+void CommSetup::printStepHeader(const String &n) {
+  Serial.println("[CommSetup] [" + String(++stepCounter) + "] " + n);
 }
-void CommSetup::printStepSuccess(const String &moduleName) {
-  Serial.println("[CommSetup] ✓ " + moduleName + " ready");
+void CommSetup::printStepSuccess(const String &n) {
+  Serial.println("[CommSetup] ✓ " + n + " ready");
 }
-void CommSetup::printStepFailure(const String &moduleName, const String &reason) {
-  String msg = "[CommSetup] ❌ " + moduleName + " failed";
-  if (reason.length() > 0) msg += " — " + reason;
-  Serial.println(msg);
+void CommSetup::printStepFailure(const String &n, const String &r) {
+  String m = "[CommSetup] ❌ " + n + " failed";
+  if (r.length()) m += " — " + r;
+  Serial.println(m);
 }
 
 // ─── Per-module init ──────────────────────────────────────────────────────────
@@ -28,7 +24,7 @@ void CommSetup::printStepFailure(const String &moduleName, const String &reason)
 bool CommSetup::initBLE() {
   printStepHeader("BLE");
   status.totalModules++;
-  if (!bleComm.init()) { printStepFailure("BLE", "init() returned false"); return false; }
+  if (!bleComm.init()) { printStepFailure("BLE"); return false; }
   printStepSuccess("BLE");
   status.bleOk = true; status.successfulModules++;
   return true;
@@ -39,7 +35,7 @@ bool CommSetup::initBLE() {
 bool CommSetup::initLoRa() {
   printStepHeader("LoRa");
   status.totalModules++;
-  if (!loraComm.init()) { printStepFailure("LoRa", "init() returned false"); return false; }
+  if (!loraComm.init()) { printStepFailure("LoRa"); return false; }
   printStepSuccess("LoRa");
   status.loraOk = true; status.successfulModules++;
   return true;
@@ -50,11 +46,10 @@ bool CommSetup::initLoRa() {
 bool CommSetup::initWiFi() {
   printStepHeader("WiFi");
   status.totalModules++;
-  if (wifiComm.init(WIFI_SSID, WIFI_PASS)) {
+  if (wifiComm.init(WIFI_SSID, WIFI_PASS))
     Serial.println("[CommSetup]   IP: " + wifiComm.getIPAddress());
-  } else {
+  else
     Serial.println("[CommSetup]   ⚠ WiFi connecting in background");
-  }
   printStepSuccess("WiFi");
   status.wifiOk = true; status.successfulModules++;
   return true;
@@ -63,9 +58,9 @@ bool CommSetup::initWiFi() {
 
 #if ENABLE_MODEM
 bool CommSetup::initModem() {
-  printStepHeader("Modem (EC200U / ModemBase)");
+  printStepHeader("Modem (ModemBase)");
   status.totalModules++;
-  if (!modemBase.init()) { printStepFailure("Modem", "init() returned false"); return false; }
+  if (!modemBase.init()) { printStepFailure("Modem"); return false; }
   printStepSuccess("Modem");
   status.modemOk = true; status.successfulModules++;
   return true;
@@ -73,12 +68,10 @@ bool CommSetup::initModem() {
 #endif
 
 #if ENABLE_SMS
-// ModemSMS depends on ModemBase (MODEM_MODE_SMS).
-// initModem() must succeed before initSMS() is called.
 bool CommSetup::initSMS() {
   printStepHeader("SMS (ModemSMS)");
   status.totalModules++;
-  if (!modemSMS.configure()) { printStepFailure("SMS", "configure() returned false"); return false; }
+  if (!modemSMS.configure()) { printStepFailure("SMS"); return false; }
   printStepSuccess("SMS");
   status.smsOk = true; status.successfulModules++;
   return true;
@@ -86,19 +79,12 @@ bool CommSetup::initSMS() {
 #endif
 
 #if ENABLE_PPPOS
-// ModemPPPoS depends on ModemBase (MODEM_MODE_DATA).
-// initModem() must succeed before initPPPoS() is called.
-// ENABLE_SMS must be 0 (enforced by #error in Config.h).
 bool CommSetup::initPPPoS() {
-  printStepHeader("PPPoS data (ModemPPPoS)");
+  printStepHeader("PPPoS (ModemPPPoS)");
   status.totalModules++;
-  if (!modemPPPoS.init()) {
-    printStepFailure("PPPoS", "init() returned false");
-    return false;
-  }
+  if (!modemPPPoS.init()) { printStepFailure("PPPoS", "init() failed"); return false; }
   if (!modemPPPoS.connect(PPPOS_CONNECT_TIMEOUT_MS)) {
-    printStepFailure("PPPoS", "connect() failed — check SIM and APN");
-    return false;
+    printStepFailure("PPPoS", "connect() failed — check SIM/APN"); return false;
   }
   printStepSuccess("PPPoS");
   Serial.println("[CommSetup]   PPPoS IP: " + modemPPPoS.getLocalIP());
@@ -107,12 +93,38 @@ bool CommSetup::initPPPoS() {
 }
 #endif
 
+bool CommSetup::initNetworkRouter() {
+  printStepHeader("NetworkRouter");
+  status.totalModules++;
+#if ENABLE_PPPOS && ENABLE_WIFI
+  networkRouter.init(&modemPPPoS, &wifiComm);
+#elif ENABLE_PPPOS
+  networkRouter.init(&modemPPPoS, nullptr);
+#elif ENABLE_WIFI
+  networkRouter.init(nullptr, &wifiComm);
+#else
+  networkRouter.init(nullptr, nullptr);
+  printStepFailure("NetworkRouter", "no bearers enabled");
+  status.successfulModules++;
+  return false;
+#endif
+  if (!networkRouter.connect()) {
+    printStepFailure("NetworkRouter", "no bearer came up");
+    status.networkRouterOk = false;
+    status.successfulModules++;
+    return false;
+  }
+  printStepSuccess("NetworkRouter");
+  status.networkRouterOk = true; status.successfulModules++;
+  return true;
+}
+
 #if ENABLE_MQTT
 bool CommSetup::initMQTT() {
   printStepHeader("MQTT");
   status.totalModules++;
-  if (!mqtt.init()) { printStepFailure("MQTT", "init() returned false"); return false; }
-  if (!mqtt.configure()) { printStepFailure("MQTT", "configure() returned false"); return false; }
+  if (!mqtt.init())      { printStepFailure("MQTT", "init() failed");      return false; }
+  if (!mqtt.configure()) { printStepFailure("MQTT", "configure() failed"); return false; }
   printStepSuccess("MQTT");
   status.mqttOk = true; status.successfulModules++;
   return true;
@@ -123,55 +135,18 @@ bool CommSetup::initMQTT() {
 bool CommSetup::initHTTP() {
   printStepHeader("HTTP REST API");
   status.totalModules++;
-  if (!httpComm.init(HTTP_SERVER_PORT)) { printStepFailure("HTTP", "init() returned false"); return false; }
+  if (!httpComm.init(HTTP_SERVER_PORT)) { printStepFailure("HTTP"); return false; }
   printStepSuccess("HTTP");
   status.httpOk = true; status.successfulModules++;
   return true;
 }
 #endif
 
-
-bool CommSetup::initNetworkRouter() {
-  printStepHeader("NetworkRouter");
-  status.totalModules++;
-
-  // Register available bearer modules (nullptr-safe — router guards internally)
-#if ENABLE_PPPOS
-  networkRouter.init(&modemPPPoS, 
-#  if ENABLE_WIFI
-                     &wifiComm
-#  else
-                     nullptr
-#  endif
-  );
-#elif ENABLE_WIFI
-  networkRouter.init(nullptr, &wifiComm);
-#else
-  networkRouter.init(nullptr, nullptr);
-  printStepFailure("NetworkRouter", "no bearers enabled (ENABLE_PPPOS=0, ENABLE_WIFI=0)");
-  return false;
-#endif
-
-  if (!networkRouter.connect()) {
-    printStepFailure("NetworkRouter", "no bearer came up — check PPPoS/WiFi config");
-    // Not fatal: MQTT/HTTP will report bearer unavailable at runtime
-    status.networkRouterOk = false;
-    // Still count as initialized (partial connectivity possible)
-    status.successfulModules++;
-    return false;
-  }
-
-  printStepSuccess("NetworkRouter");
-  status.networkRouterOk = true;
-  status.successfulModules++;
-  return true;
-}
-
 bool CommSetup::initNodeCommunication() {
   printStepHeader("Node Communication");
   status.totalModules++;
 #if ENABLE_LORA
-  if (!nodeComm.init(&loraComm)) { printStepFailure("Node Comm", "init() returned false"); return false; }
+  if (!nodeComm.init(&loraComm)) { printStepFailure("NodeComm"); return false; }
 #else
   Serial.println("[CommSetup]   LoRa disabled — node communication limited");
 #endif
@@ -180,37 +155,50 @@ bool CommSetup::initNodeCommunication() {
   return true;
 }
 
+// ─── initUserCommunication() ──────────────────────────────────────────────────
+// Creates adapter instances and registers them into UserCommunication.
+// UserCommunication never sees the module types — only IChannelAdapter*.
 bool CommSetup::initUserCommunication() {
-  printStepHeader("User Communication");
+  printStepHeader("UserCommunication + Channel Adapters");
   status.totalModules++;
-  userComm.init(SMS_ALERT_PHONE_1, this);
+
+  userComm.init(SMS_ALERT_PHONE_1);
+
+  // Register one adapter per enabled, initialized module
 #if ENABLE_SMS
-  userComm.setSMS(&modemSMS);
+  if (status.smsOk) {
+    smsAdapter = new SMSChannelAdapter(modemSMS, SMS_ALERT_PHONE_1);
+    userComm.registerAdapter(smsAdapter);
+  }
 #endif
+
 #if ENABLE_MQTT
-  userComm.setMQTT(&mqtt);
+  if (status.mqttOk) {
+    mqttAdapter = new MQTTChannelAdapter(mqtt, MQTT_TOPIC_ALERTS);
+    userComm.registerAdapter(mqttAdapter);
+  }
 #endif
-#if ENABLE_HTTP
-  userComm.setHTTP(&httpComm);
-#endif
+
 #if ENABLE_BLE
-  userComm.setBLE(&bleComm);
+  if (status.bleOk) {
+    bleAdapter = new BLEChannelAdapter(bleComm);
+    userComm.registerAdapter(bleAdapter);
+  }
 #endif
-#if ENABLE_LORA
-  userComm.setLoRa(&loraComm);
+
+#if ENABLE_LORA && ENABLE_LORA_USER_COMM
+  if (status.loraOk) {
+    loraAdapter = new LoRaChannelAdapter(loraComm, status.loraOk);
+    userComm.registerAdapter(loraAdapter);
+  }
 #endif
-#if ENABLE_WIFI
-  userComm.setWiFi(&wifiComm);
-#endif
-  printStepSuccess("User Communication");
+
+  printStepSuccess("UserCommunication");
   status.userCommOk = true; status.successfulModules++;
   return true;
 }
 
 // ─── initializeAll() ──────────────────────────────────────────────────────────
-// Initialization order matters:
-//   Modem (ModemBase) must come before SMS or PPPoS.
-//   WiFi must come before MQTT (WiFi-based MQTT).
 CommSetupStatus CommSetup::initializeAll() {
   Serial.println("\n==========================================");
   Serial.println("  COMMUNICATION MODULE INITIALIZATION");
@@ -226,29 +214,137 @@ CommSetupStatus CommSetup::initializeAll() {
   initWiFi();
 #endif
 #if ENABLE_MODEM
-  initModem();   // Must succeed before SMS or PPPoS
+  initModem();       // Must precede SMS / PPPoS
 #endif
 #if ENABLE_SMS
-  initSMS();     // Requires MODEM_MODE_SMS
+  initSMS();
 #endif
 #if ENABLE_PPPOS
-  initPPPoS();   // Requires MODEM_MODE_DATA (mutually exclusive with SMS)
+  initPPPoS();
 #endif
-  // NetworkRouter must be initialized after all bearers (PPPoS / WiFi) are up
   initNetworkRouter();
-
 #if ENABLE_MQTT
   initMQTT();
 #endif
 #if ENABLE_HTTP
   initHTTP();
 #endif
-
   initNodeCommunication();
-  initUserCommunication();
+  initUserCommunication(); // Always last — adapters need modules to be up
 
   printSummary();
   return status;
+}
+
+// ─── processChannels() ────────────────────────────────────────────────────────
+// Called every loop(). Polls all inbound channels and routes any messages
+// to userComm.onMessageReceived(). Also runs module background work.
+// UserCommunication is never called except via onMessageReceived().
+void CommSetup::processChannels(std::vector<Schedule> *schedules,
+                                 bool *scheduleRunning,
+                                 bool *scheduleLoaded) {
+  SystemStatus sys = buildSystemStatus(schedules, scheduleRunning ? *scheduleRunning : false);
+
+  // ── SMS ─────────────────────────────────────────────────────────────────────
+#if ENABLE_SMS
+  if (status.smsOk && modemSMS.isReady()) {
+    modemSMS.processBackground();  // Read URCs
+    std::vector<SMSMessage> incoming = modemSMS.processIncomingMessages(SMS_ALERT_PHONE_1);
+    for (auto &sms : incoming) {
+      // Build reply lambda capturing sender and index
+      String sender = sms.sender;
+      int    idx    = sms.index;
+      auto   reply  = [sender, idx](const String &resp) {
+        modemSMS.sendSMS(sender, resp);
+        modemSMS.deleteSMS(idx);
+      };
+      ChannelMessage msg(sms.message, sms.sender, "SMS", reply);
+      userComm.onMessageReceived(msg, scheduleRunning, scheduleLoaded, sys);
+    }
+  }
+#endif
+
+  // ── MQTT ────────────────────────────────────────────────────────────────────
+#if ENABLE_MQTT
+  if (status.mqttOk) {
+    mqtt.processBackground();
+    // MQTT commands arrive via the MQTTComm message callback set in initMQTT.
+    // The callback (set below in initMQTT) calls onMQTTMessage() which builds
+    // a ChannelMessage and calls userComm.onMessageReceived().
+  }
+#endif
+
+  // ── HTTP ────────────────────────────────────────────────────────────────────
+#if ENABLE_HTTP
+  if (status.httpOk) {
+    httpComm.processBackground();
+    if (httpComm.hasCommands()) {
+      auto cmds = httpComm.getCommands();
+      httpComm.clearCommands();
+      for (auto &cmd : cmds) {
+        String src = cmd.source;
+        // HTTP has no persistent reply path; response sent immediately via sendResponse
+        auto reply = [src](const String &resp) {
+          // HTTP responses are sent synchronously; logging only here
+          Serial.println("[CommSetup] HTTP reply to " + src + ": " + resp);
+        };
+        ChannelMessage msg(cmd.command, cmd.source, "HTTP", reply);
+        userComm.onMessageReceived(msg, scheduleRunning, scheduleLoaded, sys);
+      }
+    }
+  }
+#endif
+
+  // ── WiFi background ─────────────────────────────────────────────────────────
+#if ENABLE_WIFI
+  wifiComm.processBackground();
+#endif
+
+  // ── NetworkRouter background (PPP stack feed + reconnect) ───────────────────
+  networkRouter.processBackground();
+}
+
+// ─── buildSystemStatus() ─────────────────────────────────────────────────────
+// Collects live state from all modules into the flat SystemStatus struct.
+// UserCommunication receives this struct — it never queries modules directly.
+SystemStatus CommSetup::buildSystemStatus(std::vector<Schedule> *schedules,
+                                           bool scheduleRunning) const {
+  SystemStatus s;
+  s.scheduleRunning = scheduleRunning;
+  s.uptimeSeconds   = millis() / 1000;
+  s.freeHeapBytes   = ESP.getFreeHeap();
+  s.totalHeapBytes  = ESP.getHeapSize();
+
+  if (schedules) {
+    s.totalSchedules = schedules->size();
+    for (auto &sch : *schedules) if (sch.enabled) s.enabledSchedules++;
+  }
+
+#if ENABLE_BLE
+  s.bleConnected  = status.bleOk  && bleComm.isConnected();
+#endif
+#if ENABLE_LORA
+  s.loraUp        = status.loraOk;
+#endif
+#if ENABLE_WIFI
+  s.wifiConnected = status.wifiOk && wifiComm.isConnected();
+  if (s.wifiConnected) s.networkIP = wifiComm.getIPAddress();
+#endif
+#if ENABLE_PPPOS
+  s.ppposConnected = status.ppposOk && modemPPPoS.isConnected();
+  if (s.ppposConnected) s.networkIP = modemPPPoS.getLocalIP();
+#endif
+#if ENABLE_SMS
+  s.smsReady      = status.smsOk  && modemSMS.isReady();
+#endif
+#if ENABLE_MQTT
+  s.mqttConnected = status.mqttOk && mqtt.isConnected();
+#endif
+#if ENABLE_HTTP
+  s.httpReady     = status.httpOk && httpComm.isReady();
+#endif
+
+  return s;
 }
 
 // ─── Status / Diagnostics ─────────────────────────────────────────────────────
@@ -264,34 +360,34 @@ void CommSetup::printSummary() {
   Serial.println("  INITIALIZATION SUMMARY");
   Serial.println("==========================================");
   Serial.printf("Modules: %d/%d OK\n", status.successfulModules, status.totalModules);
-  Serial.println("\nStatus:");
+  Serial.println();
 #if ENABLE_BLE
-  Serial.printf("  BLE:    %s\n", status.bleOk    ? "✓ OK" : "✗ FAILED");
+  Serial.printf("  BLE:     %s\n", status.bleOk           ? "✓ OK" : "✗ FAILED");
 #endif
 #if ENABLE_LORA
-  Serial.printf("  LoRa:   %s\n", status.loraOk   ? "✓ OK" : "✗ FAILED");
+  Serial.printf("  LoRa:    %s\n", status.loraOk          ? "✓ OK" : "✗ FAILED");
 #endif
 #if ENABLE_WIFI
-  Serial.printf("  WiFi:   %s\n", status.wifiOk   ? "✓ OK" : "⚠ CONNECTING");
+  Serial.printf("  WiFi:    %s\n", status.wifiOk          ? "✓ OK" : "⚠ CONNECTING");
 #endif
 #if ENABLE_MODEM
-  Serial.printf("  Modem:  %s\n", status.modemOk  ? "✓ OK" : "✗ FAILED");
+  Serial.printf("  Modem:   %s\n", status.modemOk         ? "✓ OK" : "✗ FAILED");
 #endif
 #if ENABLE_SMS
-  Serial.printf("  SMS:    %s\n", status.smsOk    ? "✓ OK" : "✗ FAILED");
+  Serial.printf("  SMS:     %s\n", status.smsOk           ? "✓ OK" : "✗ FAILED");
 #endif
 #if ENABLE_PPPOS
-  Serial.printf("  PPPoS:  %s\n", status.ppposOk  ? "✓ OK" : "✗ FAILED");
+  Serial.printf("  PPPoS:   %s\n", status.ppposOk         ? "✓ OK" : "✗ FAILED");
 #endif
+  Serial.printf("  Router:  %s\n", status.networkRouterOk ? "✓ OK" : "⚠ NO BEARER");
 #if ENABLE_MQTT
-  Serial.printf("  MQTT:   %s\n", status.mqttOk   ? "✓ OK" : "⚠ CONNECTING");
+  Serial.printf("  MQTT:    %s\n", status.mqttOk          ? "✓ OK" : "⚠ CONNECTING");
 #endif
 #if ENABLE_HTTP
-  Serial.printf("  HTTP:   %s\n", status.httpOk   ? "✓ OK" : "✗ FAILED");
+  Serial.printf("  HTTP:    %s\n", status.httpOk          ? "✓ OK" : "✗ FAILED");
 #endif
-  Serial.printf("  Router:   %s\n", status.networkRouterOk ? "✓ OK" : "⚠ NO BEARER");
-  Serial.printf("  Nodes:    %s\n", status.nodeCommOk ? "✓ OK" : "✗ FAILED");
-  Serial.printf("  UserComm: %s\n", status.userCommOk ? "✓ OK" : "✗ FAILED");
+  Serial.printf("  Nodes:   %s\n", status.nodeCommOk      ? "✓ OK" : "✗ FAILED");
+  Serial.printf("  UserComm:%s\n", status.userCommOk      ? "✓ OK" : "✗ FAILED");
   Serial.println("==========================================\n");
 }
 
@@ -305,17 +401,17 @@ String CommSetup::getDetailedReport() const {
   String r = "=== COMM SETUP REPORT ===\n";
   r += "Modules: " + String(status.successfulModules) + "/" + String(status.totalModules) + "\n";
 #if ENABLE_SMS
-  r += "SMS:   " + String(status.smsOk   ? "OK" : "FAILED") + "\n";
+  r += "SMS:    " + String(status.smsOk           ? "OK" : "FAILED") + "\n";
 #endif
 #if ENABLE_PPPOS
-  r += "PPPoS: " + String(status.ppposOk ? "OK" : "FAILED") + "\n";
+  r += "PPPoS:  " + String(status.ppposOk         ? "OK" : "FAILED") + "\n";
 #endif
-  r += "Router:" + String(status.networkRouterOk ? "OK" : "NO BEARER") + "\n";
+  r += "Router: " + String(status.networkRouterOk ? "OK" : "NO BEARER") + "\n";
 #if ENABLE_MQTT
-  r += "MQTT:  " + String(status.mqttOk  ? "OK" : "FAILED") + "\n";
+  r += "MQTT:   " + String(status.mqttOk          ? "OK" : "FAILED") + "\n";
 #endif
 #if ENABLE_HTTP
-  r += "HTTP:  " + String(status.httpOk  ? "OK" : "FAILED") + "\n";
+  r += "HTTP:   " + String(status.httpOk          ? "OK" : "FAILED") + "\n";
 #endif
   return r;
 }
@@ -340,13 +436,13 @@ bool CommSetup::reinitModule(const String &moduleName) {
 #if ENABLE_PPPOS
   if (m == "PPPOS")  return initPPPoS();
 #endif
+  if (m == "ROUTER") return initNetworkRouter();
 #if ENABLE_MQTT
   if (m == "MQTT")   return initMQTT();
 #endif
 #if ENABLE_HTTP
   if (m == "HTTP")   return initHTTP();
 #endif
-  if (m == "ROUTER") return initNetworkRouter();
   Serial.println("[CommSetup] Unknown module: " + moduleName);
   return false;
 }
