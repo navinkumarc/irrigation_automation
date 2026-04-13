@@ -6,6 +6,7 @@
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include "Config.h"
+#include "CommConfig.h"
 
 class StorageManager {
 public:
@@ -27,6 +28,11 @@ public:
   // System config operations
   void loadSystemConfig(SystemConfig &config);
   void saveSystemConfig(const SystemConfig &config);
+
+  // Comm config — runtime channel/credential config stored in LittleFS
+  void loadCommConfig (CommConfig &cfg);
+  void saveCommConfig (const CommConfig &cfg);
+  void resetCommConfig(CommConfig &cfg);
 };
 
 extern StorageManager storage;

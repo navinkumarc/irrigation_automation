@@ -120,8 +120,8 @@ void setup() {
   // ── Communication init ───────────────────────────────────────────────────
   // One call initializes every transport, network router, node comm,
   // user comm, and channel adapters. The .ino knows nothing about internals.
-  // Load runtime config from NVS (must happen before commMgr.begin)
-  commCfg.load(prefs);
+  // Load runtime comm config from LittleFS (via StorageManager)
+  storage.loadCommConfig(commCfg);
 
   auto commStatus = commMgr.begin(&schedules, &scheduleRunning, &scheduleLoaded);
 

@@ -1,5 +1,6 @@
 #include "Config.h"
 #include "CommConfig.h"
+#include "StorageManager.h"
 // CommManager.cpp - Central communication manager
 // All communication concerns live here. MasterController.ino calls only the
 // public API: begin(), process(), notify*(), getStatus().
@@ -202,7 +203,7 @@ bool CommManager::initUserCommunication() {
 
 #if ENABLE_SERIAL_COMM
   if (!serialCfgHandler)
-    serialCfgHandler = new SerialConfigHandler(prefs);
+    serialCfgHandler = new SerialConfigHandler(storage);
 #endif
 
   printStepSuccess("UserCommunication");

@@ -207,3 +207,106 @@ void StorageManager::saveSystemConfig(const SystemConfig &config) {
   
   Serial.println("✓ Saved system config");
 }
+// ─── CommConfig persistence ───────────────────────────────────────────────────
+// CommConfig is stored as a single JSON file at /commconfig.json in LittleFS.
+// This keeps all comm settings in one readable, inspectable file alongside
+// the schedule files, under the same StorageManager ownership model.
+
+static const char* COMM_CONFIG_FILE = "/commconfig.json";
+
+void StorageManager::loadCommConfig(CommConfig &cfg) {
+  if (!LittleFS.exists(COMM_CONFIG_FILE)) {
+    Serial.println("[Storage] No commconfig.json — using firmware defaults");
+    return;   // cfg already holds Config.h defaults from constructor
+  }
+
+  String json = loadString(COMM_CONFIG_FILE);
+  if (json.length() == 0) {
+    Serial.println("[Storage] commconfig.json empty — using firmware defaults");
+    return;
+  }
+
+  DynamicJsonDocument doc(2048);
+  if (deserializeJson(doc, json) != DeserializationError::Ok) {
+    Serial.println("[Storage] ❌ commconfig.json parse error — using firmware defaults");
+    return;
+  }
+
+  // Channel enables
+  if (doc.containsKey("chSMS"))        cfg.chSMS             = doc["chSMS"].as<bool>();
+  if (doc.containsKey("chData"))       cfg.chData            = doc["chData"].as<bool>();
+  if (doc.containsKey("chBluetooth"))  cfg.chBluetooth       = doc["chBluetooth"].as<bool>();
+  if (doc.containsKey("chLoRa"))       cfg.chLoRa            = doc["chLoRa"].as<bool>();
+
+  // Data bearer
+  if (doc.containsKey("bearer"))       cfg.dataBearerPrimary = doc["bearer"].as<uint8_t>();
+
+  // WiFi
+  if (doc.containsKey("wifiSSID"))     cfg.wifiSSID          = doc["wifiSSID"].as<String>();
+  if (doc.containsKey("wifiPass"))     cfg.wifiPass          = doc["wifiPass"].as<String>();
+
+  // Cellular
+  if (doc.containsKey("apn"))          cfg.cellularAPN       = doc["apn"].as<String>();
+
+  // MQTT
+  if (doc.containsKey("mqttBroker"))   cfg.mqttBroker        = doc["mqttBroker"].as<String>();
+  if (doc.containsKey("mqttPort"))     cfg.mqttPort          = doc["mqttPort"].as<uint16_t>();
+  if (doc.containsKey("mqttUser"))     cfg.mqttUser          = doc["mqttUser"].as<String>();
+  if (doc.containsKey("mqttPass"))     cfg.mqttPass          = doc["mqttPass"].as<String>();
+  if (doc.containsKey("mqttClientId")) cfg.mqttClientId      = doc["mqttClientId"].as<String>();
+  if (doc.containsKey("mqttTLS"))      cfg.mqttTLS           = doc["mqttTLS"].as<bool>();
+
+  // SMS
+  if (doc.containsKey("smsPhone1"))    cfg.smsPhone1         = doc["smsPhone1"].as<String>();
+  if (doc.containsKey("smsPhone2"))    cfg.smsPhone2         = doc["smsPhone2"].as<String>();
+
+  // BLE
+  if (doc.containsKey("bleName"))      cfg.bleName           = doc["bleName"].as<String>();
+
+  // LoRa
+  if (doc.containsKey("loraFreq"))     cfg.loraFrequencyHz   = doc["loraFreq"].as<uint32_t>();
+
+  // HTTP
+  if (doc.containsKey("httpPort"))     cfg.httpPort          = doc["httpPort"].as<uint16_t>();
+
+  Serial.println("[Storage] ✓ CommConfig loaded from /commconfig.json");
+}
+
+void StorageManager::saveCommConfig(const CommConfig &cfg) {
+  DynamicJsonDocument doc(2048);
+
+  doc["chSMS"]        = cfg.chSMS;
+  doc["chData"]       = cfg.chData;
+  doc["chBluetooth"]  = cfg.chBluetooth;
+  doc["chLoRa"]       = cfg.chLoRa;
+  doc["bearer"]       = cfg.dataBearerPrimary;
+  doc["wifiSSID"]     = cfg.wifiSSID;
+  doc["wifiPass"]     = cfg.wifiPass;
+  doc["apn"]          = cfg.cellularAPN;
+  doc["mqttBroker"]   = cfg.mqttBroker;
+  doc["mqttPort"]     = cfg.mqttPort;
+  doc["mqttUser"]     = cfg.mqttUser;
+  doc["mqttPass"]     = cfg.mqttPass;
+  doc["mqttClientId"] = cfg.mqttClientId;
+  doc["mqttTLS"]      = cfg.mqttTLS;
+  doc["smsPhone1"]    = cfg.smsPhone1;
+  doc["smsPhone2"]    = cfg.smsPhone2;
+  doc["bleName"]      = cfg.bleName;
+  doc["loraFreq"]     = cfg.loraFrequencyHz;
+  doc["httpPort"]     = cfg.httpPort;
+
+  String json;
+  serializeJsonPretty(doc, json);
+
+  if (saveString(COMM_CONFIG_FILE, json)) {
+    Serial.println("[Storage] ✓ CommConfig saved to /commconfig.json");
+  } else {
+    Serial.println("[Storage] ❌ Failed to save CommConfig");
+  }
+}
+
+void StorageManager::resetCommConfig(CommConfig &cfg) {
+  cfg = CommConfig();   // rebuild from Config.h defaults
+  saveCommConfig(cfg);
+  Serial.println("[Storage] ✓ CommConfig reset to firmware defaults");
+}

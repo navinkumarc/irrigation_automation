@@ -1,13 +1,17 @@
 // SerialConfigHandler.h  —  Serial config console
 //
-// Intercepts configuration commands arriving on the Serial channel.
-// Called by CommManager::pollSerial() before the normal command dispatcher.
-// Returns true if the line was consumed as a config command.
+// Intercepts configuration commands on the Serial channel.
+// Called by CommManager::pollSerial() BEFORE the normal command dispatcher.
+// Returns true if the line was a config command (caller must not process it further).
+//
+// Storage: delegates to StorageManager for persistence.
+//   SAVE CONFIG  → storage.saveCommConfig(commCfg)
+//   RESET CONFIG → storage.resetCommConfig(commCfg)
 //
 // ═══════════════════════════════════════════════════════
 //  CONFIG HELP                     Show this reference
-//  SHOW CONFIG                     Print current config
-//  SAVE CONFIG                     Persist to NVS flash
+//  SHOW CONFIG                     Print current settings
+//  SAVE CONFIG                     Persist to LittleFS
 //  RESET CONFIG                    Restore firmware defaults
 // ───────────────────────────────────────────────────────
 //  ENABLE  SMS | DATA | BLE | LORA
@@ -26,22 +30,23 @@
 //  SET MQTT_TLS    ON | OFF
 //  SET SMS_PHONE1  +<E.164>
 //  SET SMS_PHONE2  +<E.164>
-//  SET BLE_NAME    <name>
+//  SET BLE_NAME    <n>
 //  SET LORA_FREQ   <Hz>
 //  SET HTTP_PORT   <number>
 // ═══════════════════════════════════════════════════════
-//  Changes apply on next reboot.
-//  Run SAVE CONFIG to persist across power cycles.
+//  Changes are live in memory immediately.
+//  Run SAVE CONFIG to persist across reboots.
+//  Most changes require a reboot to take full effect.
 
 #ifndef SERIAL_CONFIG_HANDLER_H
 #define SERIAL_CONFIG_HANDLER_H
 
 #include <Arduino.h>
-#include <Preferences.h>
 #include "CommConfig.h"
+#include "StorageManager.h"
 
 class SerialConfigHandler {
-  Preferences &_prefs;
+  StorageManager &_storage;
 
   bool handleEnable (const String &up, const String &raw);
   bool handleDisable(const String &up, const String &raw);
@@ -49,9 +54,9 @@ class SerialConfigHandler {
   void printHelp    () const;
 
 public:
-  explicit SerialConfigHandler(Preferences &prefs) : _prefs(prefs) {}
+  explicit SerialConfigHandler(StorageManager &storage) : _storage(storage) {}
 
-  // Returns true if the line was a config command (caller must not process further).
+  // Returns true if the line was a config command.
   bool handle(const String &line);
 };
 
