@@ -138,7 +138,10 @@ private:
   BLEChannelAdapter  *bleAdapter  = nullptr;
 #endif
 #if ENABLE_LORA && ENABLE_LORA_USER_COMM
-  LoRaChannelAdapter *loraAdapter = nullptr;
+  LoRaChannelAdapter  *loraAdapter   = nullptr;
+#endif
+#if ENABLE_SERIAL_COMM
+  SerialChannelAdapter *serialAdapter = nullptr;
 #endif
 
   // ── Application state refs — set in begin() ───────────────────────────────
@@ -180,6 +183,7 @@ private:
   void pollMQTT();
   void pollHTTP();
   void pollLoRa();
+  void pollSerial();
 
   // ── Internal helpers ───────────────────────────────────────────────────────
   SystemStatus     buildSystemStatus() const;

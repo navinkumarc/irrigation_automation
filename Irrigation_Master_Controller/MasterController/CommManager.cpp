@@ -192,6 +192,12 @@ bool CommManager::initUserCommunication() {
   }
 #endif
 
+#if ENABLE_SERIAL_COMM
+  // Serial is always available — no init-status gate needed
+  serialAdapter = new SerialChannelAdapter(Serial);
+  userComm.registerAdapter(serialAdapter);
+#endif
+
   printStepSuccess("UserCommunication");
   initStatus.userCommOk = true; initStatus.successfulModules++;
   return true;
@@ -264,6 +270,7 @@ void CommManager::process() {
   pollMQTT();
   pollHTTP();
   pollLoRa();
+  pollSerial();
 
   // 3. Process raw LoRa node messages from incomingQueue
 #if ENABLE_LORA
@@ -331,6 +338,31 @@ void CommManager::pollLoRa() {
   // User-facing LoRa commands share incomingQueue — drain and deliver below.
   // (Raw queue drain happens in process(); individual STAT/AUTO_CLOSE messages
   //  are dispatched by NodeCommunication. User commands here would be "CMD|..." style.)
+}
+
+// ─── pollSerial() ─────────────────────────────────────────────────────────────
+// Reads complete lines from the hardware Serial port (USB monitor / UART0).
+// Each complete line is wrapped in a ChannelMessage and delivered to
+// UserCommunication exactly like any other channel.
+// Reply lambda writes the response back to Serial so the operator sees it
+// immediately in the monitor.
+void CommManager::pollSerial() {
+#if ENABLE_SERIAL_COMM
+  if (!serialAdapter) return;
+
+  String line = serialAdapter->readLine();
+  if (line.length() == 0) return;   // No complete line yet
+
+  Serial.println("[Serial] ← "" + line + """);
+
+  // Build a reply lambda that echoes the response back to Serial
+  auto reply = [](const String &response) {
+    Serial.println("[Serial] → " + response);
+  };
+
+  ChannelMessage msg(line, "Serial", "Serial", reply);
+  deliverMessage(msg);
+#endif
 }
 
 // ─── deliverMessage() ────────────────────────────────────────────────────────

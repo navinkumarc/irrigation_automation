@@ -114,4 +114,63 @@ public:
 };
 #endif // ENABLE_LORA && ENABLE_LORA_USER_COMM
 
+// ─── Serial (USB / UART0 debug console) ──────────────────────────────────────
+// Always available as long as Serial has been initialised in setup().
+// Inbound: CommManager::pollSerial() reads complete lines and delivers them
+//          as ChannelMessages. The reply lambda writes back to Serial.
+// Outbound: send() writes a prefixed line to Serial.
+// No ENABLE_ guard needed — Serial is always present on Arduino/ESP32.
+// The ENABLE_SERIAL_COMM flag in Config.h controls whether CommManager
+// polls and registers this adapter.
+#if ENABLE_SERIAL_COMM
+
+class SerialChannelAdapter : public IChannelAdapter {
+  HardwareSerial& _serial;
+  String          _lineBuffer;    // Accumulates characters until newline
+
+public:
+  explicit SerialChannelAdapter(HardwareSerial &serial = Serial)
+    : _serial(serial) {}
+
+  const char* channelName() const override { return "Serial"; }
+
+  // Serial is always available once Serial.begin() has been called.
+  bool isAvailable() const override { return true; }
+
+  // Write an outbound message to the serial console.
+  bool send(const String &message) override {
+    _serial.println("[CommMgr→Serial] " + message);
+    return true;
+  }
+
+  // sendTo is not meaningful for Serial — falls back to send().
+  bool sendTo(const String &address, const String &message) override {
+    (void)address;
+    return send(message);
+  }
+
+  // Read available bytes into the line buffer.
+  // Returns a complete line (without trailing CR/LF) when one is ready,
+  // or an empty String if no complete line is available yet.
+  // Call this from CommManager::pollSerial() every loop iteration.
+  String readLine() {
+    while (_serial.available()) {
+      char c = (char)_serial.read();
+      if (c == '
+') {
+        String line = _lineBuffer;
+        _lineBuffer = "";
+        line.trim();
+        return line;      // Caller gets the complete line
+      } else if (c != '') {
+        _lineBuffer += c;
+      }
+    }
+    return "";            // No complete line yet
+  }
+};
+
+#endif // ENABLE_SERIAL_COMM
+
+
 #endif // CHANNEL_ADAPTERS_H

@@ -55,9 +55,11 @@
 #define ENABLE_LORA_NODE_COMM 1
 
 // ========== Communication Channel Commands ==========
-#define ENABLE_BLE_COMMANDS  1
-#define ENABLE_WIFI_COMMANDS 1
-#define ENABLE_HTTP_COMMANDS 1
+#define ENABLE_BLE_COMMANDS    1
+#define ENABLE_WIFI_COMMANDS   1
+#define ENABLE_HTTP_COMMANDS   1
+#define ENABLE_SERIAL_COMM     1    // Serial monitor as a user communication channel
+#define SERIAL_COMM_BAUD       115200  // Must match Serial.begin() in setup()
 
 // ========== HTTP API Settings ==========
 #define HTTP_SERVER_PORT 80
