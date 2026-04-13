@@ -46,8 +46,8 @@ struct CommConfig {
   ActiveChannel activeChannel;   // SMS | MQTT | HTTP (only one at a time)
 
   // ── Independent channels ──────────────────────────────────────────────────
-  bool chBluetooth;   // Bluetooth — always enabled by default
-  bool chLoRa;        // LoRa user broadcast
+  bool chLoRa;        // LoRa — default ON (user + node channel)
+  bool chBluetooth;   // Bluetooth — default OFF, enable via ENABLE BLE
 
   // ── Internet bearer (used when activeChannel == MQTT or HTTP) ────────────
   bool enablePPPoS;   // Enable PPPoS (cellular) as primary bearer
@@ -89,8 +89,8 @@ struct CommConfig {
                       (ENABLE_HTTP == 1) ? ActiveChannel::HTTP :
                                            ActiveChannel::NONE;
 
-    chBluetooth     = true;                   // Always enabled by default
-    chLoRa          = (ENABLE_LORA_USER_COMM == 1);
+    chLoRa          = (ENABLE_LORA == 1);     // ON when hardware compiled in
+    chBluetooth     = false;                  // OFF by default — enable via Serial
 
     // Bearer defaults: PPPoS primary if compiled, WiFi as fallback
     enablePPPoS     = (ENABLE_PPPOS == 1);

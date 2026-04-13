@@ -158,19 +158,27 @@ bool CommManager::initNodeCommunication() {
   printStepHeader("NodeCommunication");
   initStatus.totalModules++;
 
-  // Register all available transport adapters into NodeCommunication.
-  // NodeCommunication itself has zero hardware knowledge.
-  // Adapters are tried in registration order (LoRa first, BLE fallback).
+  // Register node transport adapters respecting runtime config and priority:
+  //   LoRa only        → LoRa
+  //   BLE only         → BLE
+  //   LoRa + BLE       → LoRa (primary), BLE (fallback)
+  // Registration order = priority order inside NodeCommunication.
 
 #if ENABLE_LORA
-  loraNodeTransport = new LoRaNodeTransport(loraComm);
-  loraNodeTransport->setHwReady(initStatus.loraOk);
-  nodeComm.registerTransport(loraNodeTransport);
+  if (commCfg.chLoRa) {
+    loraNodeTransport = new LoRaNodeTransport(loraComm);
+    loraNodeTransport->setHwReady(initStatus.loraOk);
+    nodeComm.registerTransport(loraNodeTransport);
+    Serial.println("[CommMgr]  LoRa registered as node transport (primary)");
+  }
 #endif
 
 #if ENABLE_BLE
-  bleNodeTransport = new BLENodeTransport(bleComm);
-  nodeComm.registerTransport(bleNodeTransport);
+  if (commCfg.chBluetooth) {
+    bleNodeTransport = new BLENodeTransport(bleComm);
+    nodeComm.registerTransport(bleNodeTransport);
+    Serial.println("[CommMgr]  BLE registered as node transport (fallback)");
+  }
 #endif
 
   if (!nodeComm.begin()) {
@@ -224,16 +232,20 @@ bool CommManager::initUserCommunication() {
     userComm.registerAdapter(mqttAdapter);
   }
 #endif
-#if ENABLE_BLE
-  if (initStatus.bleOk) {
-    bleAdapter = new BLEChannelAdapter(bleComm);
-    userComm.registerAdapter(bleAdapter);
-  }
-#endif
+  // User channel adapters for LoRa and BLE: LoRa primary, BLE fallback.
+  // Registered in priority order — UserCommunication broadcasts to all available.
 #if ENABLE_LORA && ENABLE_LORA_USER_COMM
-  if (initStatus.loraOk) {
+  if (commCfg.chLoRa && initStatus.loraOk) {
     loraAdapter = new LoRaChannelAdapter(loraComm, initStatus.loraOk);
     userComm.registerAdapter(loraAdapter);
+    Serial.println("[CommMgr]  LoRa registered as user channel (primary)");
+  }
+#endif
+#if ENABLE_BLE
+  if (commCfg.chBluetooth && initStatus.bleOk) {
+    bleAdapter = new BLEChannelAdapter(bleComm);
+    userComm.registerAdapter(bleAdapter);
+    Serial.println("[CommMgr]  BLE registered as user channel (fallback)");
   }
 #endif
 
@@ -270,11 +282,20 @@ CommManagerStatus CommManager::begin(std::vector<Schedule> *sched,
   userComm.init(commCfg.smsPhone1);
 
   // Init order: hardware transports → bearers → network → app-layer → UC
-#if ENABLE_BLE
-  initBLE();
-#endif
+// Init LoRa and BLE only when runtime config enables them
 #if ENABLE_LORA
-  initLoRa();
+  if (commCfg.chLoRa) {
+    initLoRa();
+  } else {
+    Serial.println("[CommMgr]  LoRa skipped (disabled in config)");
+  }
+#endif
+#if ENABLE_BLE
+  if (commCfg.chBluetooth) {
+    initBLE();
+  } else {
+    Serial.println("[CommMgr]  BLE skipped (disabled in config)");
+  }
 #endif
 #if ENABLE_WIFI
   initWiFi();

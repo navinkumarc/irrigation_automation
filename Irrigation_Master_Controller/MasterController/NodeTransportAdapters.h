@@ -17,7 +17,7 @@
 #include "MessageFormats.h"
 #include "Config.h"
 
-// ─── LoRa node transport ──────────────────────────────────────────────────────
+// ─── LoRa node transport — PRIMARY ──────────────────────────────────────────────
 // Uses LoRaComm::sendWithAck() for reliable delivery with ACK + retry.
 // Receives STAT| and AUTO_CLOSE| messages via LoRaComm::processIncoming()
 // which populates incomingQueue; pollIncoming() drains that queue.
@@ -78,7 +78,7 @@ public:
 };
 #endif // ENABLE_LORA
 
-// ─── BLE node transport ───────────────────────────────────────────────────────
+// ─── BLE node transport — FALLBACK ──────────────────────────────────────────────
 // Uses BLEComm::notify() to push commands to a BLE-connected node.
 // Inbound: BLE commands arrive via BLEComm's commandCallback, which pushes
 // to incomingQueue. pollIncoming() drains that queue for node messages.

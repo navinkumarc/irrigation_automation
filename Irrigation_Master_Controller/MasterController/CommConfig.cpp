@@ -15,8 +15,8 @@ void CommConfig::print() const {
   Serial.printf ("  (SMS / MQTT / HTTP — only one at a time)\n");
 
   Serial.println(F("-- Independent Channels --"));
-  Serial.printf ("  Bluetooth : %s\n", chBluetooth ? "ENABLED" : "DISABLED");
-  Serial.printf ("  LoRa      : %s\n", chLoRa      ? "ENABLED" : "DISABLED");
+  Serial.printf ("  LoRa      : %s (primary)\n",  chLoRa      ? "ENABLED" : "DISABLED");
+  Serial.printf ("  Bluetooth : %s (fallback)\n", chBluetooth ? "ENABLED" : "DISABLED");
   Serial.println(F("  Serial    : ALWAYS ON (not configurable)"));
 
   if (needsInternet()) {
