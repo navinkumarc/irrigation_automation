@@ -36,7 +36,6 @@
 #include "ChannelAdapters.h"
 #include "ChannelMessage.h"
 #include "MessageQueue.h"
-#include "MessageFormats.h"
 #include "NetworkRouter.h"
 #include "NodeCommunication.h"
 #include "UserCommunication.h"
