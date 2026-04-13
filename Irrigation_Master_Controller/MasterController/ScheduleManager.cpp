@@ -3,21 +3,17 @@
 #include "UserCommunication.h"
 #include <ArduinoJson.h>
 
-// Forward reference to global loraComm (defined in MasterController.ino)
-extern LoRaComm loraComm;
-
-ScheduleManager::ScheduleManager() : userComm(nullptr) {}
+ScheduleManager::ScheduleManager() : userComm(nullptr), nodeComm(nullptr) {}
 
 /**
  * Initialize with UserCommunication pointer
  */
-void ScheduleManager::init(UserCommunication* comm) {
-  userComm = comm;
-  if (comm != nullptr) {
-    Serial.println("[ScheduleManager] ✓ Initialized with UserCommunication");
-  } else {
-    Serial.println("[ScheduleManager] ⚠ Initialized without UserCommunication (will use extern)");
-  }
+void ScheduleManager::init(UserCommunication* comm, NodeCommunication* nc) {
+  userComm  = comm;
+  nodeComm  = nc;
+  if (comm) Serial.println("[ScheduleManager] ✓ UserCommunication set");
+  if (nc)   Serial.println("[ScheduleManager] ✓ NodeCommunication set");
+  if (!comm && !nc) Serial.println("[ScheduleManager] ⚠ No comm pointers — notifications and valve commands disabled");
 }
 
 void ScheduleManager::setPump(bool on) {
@@ -32,12 +28,14 @@ void ScheduleManager::setPump(bool on) {
 
 bool ScheduleManager::openNode(int node, int idx, uint32_t duration) {
   Serial.printf("[Schedule] Opening node %d (idx %d, duration %lu ms)\n", node, idx, duration);
-  return loraComm.sendWithAck("OPEN", node, "", idx, duration);
+  if (!nodeComm) { Serial.println("[Schedule] ❌ NodeCommunication not set"); return false; }
+  return nodeComm->sendValveOpen(node, "", idx, duration);
 }
 
 bool ScheduleManager::closeNode(int node, int idx) {
   Serial.printf("[Schedule] Closing node %d (idx %d)\n", node, idx);
-  return loraComm.sendWithAck("CLOSE", node, "", idx, 0);
+  if (!nodeComm) { Serial.println("[Schedule] ❌ NodeCommunication not set"); return false; }
+  return nodeComm->sendValveClose(node, "", idx);
 }
 
 /**

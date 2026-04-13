@@ -136,7 +136,7 @@ void setup() {
 
   // ScheduleManager needs userComm access for sending notifications.
   // CommManager exposes a thin pointer for this purpose.
-  scheduleMgr.init(commMgr.getUserComm());
+  scheduleMgr.init(commMgr.getUserComm(), commMgr.getNodeComm());
 
   Serial.println("\n==========================================");
   Serial.println("✓ SYSTEM READY");

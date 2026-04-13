@@ -157,8 +157,27 @@ bool CommManager::initHTTP() {
 bool CommManager::initNodeCommunication() {
   printStepHeader("NodeCommunication");
   initStatus.totalModules++;
+
+  // Register all available transport adapters into NodeCommunication.
+  // NodeCommunication itself has zero hardware knowledge.
+  // Adapters are tried in registration order (LoRa first, BLE fallback).
+
 #if ENABLE_LORA
-  if (!nodeComm.init(&loraComm)) { printStepFailure("NodeCommunication"); return false; }
+  loraNodeTransport = new LoRaNodeTransport(loraComm);
+  loraNodeTransport->setHwReady(initStatus.loraOk);
+  nodeComm.registerTransport(loraNodeTransport);
+#endif
+
+#if ENABLE_BLE
+  bleNodeTransport = new BLENodeTransport(bleComm);
+  nodeComm.registerTransport(bleNodeTransport);
+#endif
+
+  if (!nodeComm.begin()) {
+    printStepFailure("NodeCommunication", "no transports available");
+    initStatus.nodeCommOk = false; initStatus.successfulModules++;
+    return false;
+  }
 
   // Node message callback: format via MsgFmt and forward to UserCommunication.
   nodeComm.setMessageCallback([this](const NodeMessage &nm) {
@@ -173,15 +192,13 @@ bool CommManager::initNodeCommunication() {
         alert = MsgFmt::alertAutoClose(nm.nodeId, nm.reason);
         break;
       default:
-        alert = MsgFmt::alertWarning("Unknown node message from node " + String(nm.nodeId));
+        alert = MsgFmt::alertWarning("Unknown message from node " + String(nm.nodeId));
         break;
     }
     Serial.println("[CommMgr] Node event: " + alert);
     userComm.sendAlert(alert, SEV_INFO);
   });
-#else
-  Serial.println("[CommMgr]   LoRa disabled — node communication limited");
-#endif
+
   printStepSuccess("NodeCommunication");
   initStatus.nodeCommOk = true; initStatus.successfulModules++;
   return true;
@@ -304,11 +321,8 @@ void CommManager::process() {
   pollLoRa();
   pollSerial();
 
-  // 3. Process raw LoRa node messages from incomingQueue
-#if ENABLE_LORA
-  loraComm.processIncoming();
-  nodeComm.processIncoming();
-#endif
+  // 3. Drive NodeCommunication — polls all registered transport adapters
+  nodeComm.process();
 
   // 4. Drain general incomingQueue (non-user messages queued by LoRa etc.)
   String raw;
@@ -516,21 +530,21 @@ SystemStatus CommManager::buildSystemStatus() const {
 
 // ─── sendNodeCommand() ────────────────────────────────────────────────────────
 bool CommManager::sendNodeCommand(int nodeId, const String &command) {
-#if ENABLE_LORA
+  // command is the cmdType token: "OPEN", "CLOSE", "PING", etc.
   if (!initStatus.nodeCommOk) {
     Serial.println("[CommMgr] ❌ sendNodeCommand: NodeCommunication not ready");
     return false;
   }
-  return nodeComm.sendCommand(nodeId, command);
-#else
-  Serial.println("[CommMgr] ❌ sendNodeCommand: LoRa disabled");
-  return false;
-#endif
+  return nodeComm.sendCommand(command, nodeId, "", 0, 0);
 }
 
 // ─── getUserComm() ────────────────────────────────────────────────────────────
 UserCommunication* CommManager::getUserComm() {
   return initialized ? &userComm : nullptr;
+}
+
+NodeCommunication* CommManager::getNodeComm() {
+  return initialized ? &nodeComm : nullptr;
 }
 
 // ─── printSummary() ──────────────────────────────────────────────────────────

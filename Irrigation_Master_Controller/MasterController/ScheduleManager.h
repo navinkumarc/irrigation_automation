@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <vector>
 #include "Config.h"
-#include "LoRaComm.h"
+#include "NodeCommunication.h"
 
 // Forward declaration of UserCommunication
 class UserCommunication;
@@ -25,6 +25,9 @@ private:
   // Pointer to UserCommunication for sending notifications
   UserCommunication* userComm;
 
+  // Pointer to NodeCommunication for valve commands
+  NodeCommunication* nodeComm;
+
 public:
   ScheduleManager();
 
@@ -32,7 +35,7 @@ public:
    * Initialize with UserCommunication pointer
    * Must be called in setup() after UserComm is created
    */
-  void init(UserCommunication* comm);
+  void init(UserCommunication* comm, NodeCommunication* nodeComm = nullptr);
 
   /**
    * Control pump

@@ -39,6 +39,7 @@
 #include "MessageQueue.h"
 #include "NetworkRouter.h"
 #include "NodeCommunication.h"
+#include "NodeTransportAdapters.h"
 #include "UserCommunication.h"
 
 // Transport module includes — compiled only when flags are set
@@ -123,6 +124,14 @@ private:
   // ── Sub-module instances owned by CommManager ──────────────────────────────
   // NodeCommunication and UserCommunication live here, not in .ino
   NodeCommunication nodeComm;
+
+  // Node transport adapters (registered into nodeComm during init)
+#if ENABLE_LORA
+  LoRaNodeTransport *loraNodeTransport = nullptr;
+#endif
+#if ENABLE_BLE
+  BLENodeTransport  *bleNodeTransport  = nullptr;
+#endif
   UserCommunication userComm;
   NetworkRouter     networkRouter;
 
@@ -251,6 +260,7 @@ public:
   // Expose UserCommunication pointer for modules (e.g. ScheduleManager)
   // that need to send alerts. Returns nullptr if not initialized.
   UserCommunication* getUserComm();
+  NodeCommunication* getNodeComm();
 };
 
 // ─── Global instance ──────────────────────────────────────────────────────────

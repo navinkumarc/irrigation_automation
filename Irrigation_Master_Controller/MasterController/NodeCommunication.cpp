@@ -1,164 +1,164 @@
-// NodeCommunication.cpp - Handles all LoRa node communications
+// NodeCommunication.cpp  —  All master ↔ node communication
+// Zero direct transport knowledge — all channels via INodeTransport adapters.
 #include "NodeCommunication.h"
-#include "MessageFormats.h"
-#include "MessageQueue.h"
 
-extern MessageQueue incomingQueue;
+// ─── registerTransport() ──────────────────────────────────────────────────────
+void NodeCommunication::registerTransport(INodeTransport *t) {
+  if (!t) return;
+  transports.push_back(t);
+  Serial.println("[NodeComm] Registered transport: " + String(t->transportName()));
+}
 
-NodeCommunication::NodeCommunication() : loraComm(nullptr), initialized(false), messageCallback(nullptr) {}
-
-bool NodeCommunication::init(LoRaComm* lora) {
-  if (lora == nullptr) {
-    Serial.println("[NodeComm] ❌ LoRa pointer is null");
+// ─── begin() ──────────────────────────────────────────────────────────────────
+bool NodeCommunication::begin() {
+  if (transports.empty()) {
+    Serial.println("[NodeComm] ❌ No transports registered");
+    initialized = false;
     return false;
   }
 
-  loraComm = lora;
+  // Wire inbound callback into every transport
+  for (auto *t : transports) {
+    t->setInboundCallback([this](const String &raw, const char *src) {
+      onRawMessage(raw, src);
+    });
+    Serial.printf("[NodeComm]  ✓ %s inbound wired\n", t->transportName());
+  }
+
   initialized = true;
-  Serial.println("[NodeComm] ✓ Initialized");
+  Serial.printf("[NodeComm] ✓ Ready — %d transport(s) registered\n",
+                (int)transports.size());
   return true;
 }
 
-bool NodeCommunication::isInitialized() {
-  return initialized;
+// ─── Outbound helpers ─────────────────────────────────────────────────────────
+
+bool NodeCommunication::sendValveOpen(int nodeId, const String &schedId,
+                                      int seqIdx, uint32_t durationMs) {
+  return sendCommand(CMD_OPEN, nodeId, schedId, seqIdx, durationMs);
 }
 
-void NodeCommunication::setMessageCallback(NodeMessageCallback callback) {
-  messageCallback = callback;
+bool NodeCommunication::sendValveClose(int nodeId, const String &schedId, int seqIdx) {
+  return sendCommand(CMD_CLOSE, nodeId, schedId, seqIdx, 0);
 }
 
-// Send command to node (main to node)
-bool NodeCommunication::sendCommand(int nodeId, const String &command) {
-  if (!initialized || loraComm == nullptr) {
+bool NodeCommunication::sendPing(int nodeId) {
+  return sendCommand(CMD_PING, nodeId, "", 0, 0);
+}
+
+bool NodeCommunication::requestStatus(int nodeId) {
+  return sendCommand(CMD_STATUS, nodeId, "", 0, 0);
+}
+
+// ─── sendCommand() — tries transports in registration order ──────────────────
+bool NodeCommunication::sendCommand(const String &cmdType, int nodeId,
+                                    const String &schedId, int seqIdx,
+                                    uint32_t durationMs) {
+  if (!initialized) {
     Serial.println("[NodeComm] ❌ Not initialized");
     return false;
   }
-
   if (nodeId < 1 || nodeId > 255) {
     Serial.println("[NodeComm] ❌ Invalid node ID: " + String(nodeId));
     return false;
   }
 
-  Serial.println("[NodeComm] → Sending to Node " + String(nodeId) + ": " + command);
-  bool result = loraComm->sendWithAck(command, nodeId, "", 0, 0);
-
-  if (result) {
-    Serial.println("[NodeComm] ✓ Node " + String(nodeId) + " acknowledged");
-  } else {
-    Serial.println("[NodeComm] ✗ Node " + String(nodeId) + " timeout");
+  for (auto *t : transports) {
+    if (!t->isAvailable()) {
+      Serial.printf("[NodeComm]  skip %s (unavailable)\n", t->transportName());
+      continue;
+    }
+    Serial.printf("[NodeComm] → %s | %s | node %d\n",
+                  t->transportName(), cmdType.c_str(), nodeId);
+    if (t->sendCommand(cmdType, nodeId, schedId, seqIdx, durationMs)) {
+      Serial.printf("[NodeComm] ✓ Delivered via %s\n", t->transportName());
+      return true;
+    }
+    Serial.printf("[NodeComm] ✗ %s failed — trying next\n", t->transportName());
   }
 
-  return result;
+  Serial.println("[NodeComm] ❌ All transports failed for node " + String(nodeId));
+  return false;
 }
 
-// Send command and wait for specific response
-bool NodeCommunication::sendCommandWithResponse(int nodeId, const String &command, String &response) {
-  if (!sendCommand(nodeId, command)) {
-    return false;
+// ─── process() ────────────────────────────────────────────────────────────────
+void NodeCommunication::process() {
+  if (!initialized) return;
+  for (auto *t : transports) {
+    t->pollIncoming();
   }
-
-  // Response is in the LoRa acknowledgment
-  response = "ACK";
-  return true;
 }
 
-// Process incoming messages from nodes (node to main) — low-level LoRa receive
-void NodeCommunication::processIncoming() {
-  if (!initialized || loraComm == nullptr) {
+// ─── onRawMessage() — inbound callback fired by transport adapters ─────────────
+void NodeCommunication::onRawMessage(const String &raw, const char *transport) {
+  Serial.printf("[NodeComm] ← %s | %s\n", transport, raw.substring(0, 60).c_str());
+  NodeMessage nm = parseMessage(raw, transport);
+  if (nm.type == NodeMessageType::UNKNOWN) {
+    Serial.println("[NodeComm] ⚠ Unknown message type — ignored");
     return;
   }
-
-  loraComm->processIncoming();
-}
-
-// Get node status
-String NodeCommunication::getNodeStatus(int nodeId) {
-  if (!initialized) {
-    return "NodeComm not initialized";
+  if (messageCallback) {
+    messageCallback(nm);
+  } else {
+    Serial.println("[NodeComm] ⚠ No message callback set");
   }
-
-  return "Node " + String(nodeId) + " status unknown";
 }
 
-// Parse node message into structured data
-NodeMessage NodeCommunication::parseNodeMessage(const String &msg) {
-  NodeMessage nodeMsg;
-  nodeMsg.rawMessage = msg;
-  nodeMsg.nodeId = 0;
-  nodeMsg.batteryPercent = 0;
-  nodeMsg.batteryVoltage = 0.0;
-  nodeMsg.solarVoltage = 0.0;
-  nodeMsg.valveStates = "";
-  nodeMsg.moistureLevels = "";
-  nodeMsg.reason = "";
+// ─── parseMessage() ───────────────────────────────────────────────────────────
+NodeMessage NodeCommunication::parseMessage(const String &raw,
+                                            const char *transport) const {
+  NodeMessage nm;
+  nm.rawMessage = raw;
+  nm.transport  = String(transport);
 
-  if (msg.startsWith(MSG_STAT_PREFIX MSG_SEP)) {
-    nodeMsg.type = NodeMessageType::TELEMETRY;
+  if (raw.startsWith(MSG_STAT_PREFIX MSG_SEP)) {
+    nm.type = NodeMessageType::TELEMETRY;
 
-    // Use MsgFmt::extractField for all key=value parsing
-    String nStr = MsgFmt::extractField(msg, KEY_NODE_ID);
-    if (nStr.length()) nodeMsg.nodeId = nStr.toInt();
+    String n = MsgFmt::extractField(raw, KEY_NODE_ID);
+    if (n.length()) nm.nodeId = n.toInt();
 
-    String battStr = MsgFmt::extractField(msg, KEY_BATTERY);
-    if (battStr.length()) nodeMsg.batteryPercent = battStr.toInt();
+    String b = MsgFmt::extractField(raw, KEY_BATTERY);
+    if (b.length()) nm.batteryPercent = b.toInt();
 
-    String bvStr = MsgFmt::extractField(msg, KEY_BATT_V);
-    if (bvStr.length()) nodeMsg.batteryVoltage = bvStr.toFloat();
+    String bv = MsgFmt::extractField(raw, KEY_BATT_V);
+    if (bv.length()) nm.batteryVoltage = bv.toFloat();
 
-    String solStr = MsgFmt::extractField(msg, KEY_SOLAR_V);
-    if (solStr.length()) nodeMsg.solarVoltage = solStr.toFloat();
+    String sv = MsgFmt::extractField(raw, KEY_SOLAR_V);
+    if (sv.length()) nm.solarVoltage = sv.toFloat();
 
-    nodeMsg.valveStates    = MsgFmt::extractField(msg, KEY_VALVES);
-    nodeMsg.moistureLevels = MsgFmt::extractField(msg, KEY_MOISTURE);
+    nm.valveStates    = MsgFmt::extractField(raw, KEY_VALVES);
+    nm.moistureLevels = MsgFmt::extractField(raw, KEY_MOISTURE);
 
-  } else if (msg.startsWith(MSG_AUTO_CLOSE_PREFIX MSG_SEP)) {
-    nodeMsg.type = NodeMessageType::AUTO_CLOSE;
+  } else if (raw.startsWith(MSG_AUTO_CLOSE_PREFIX MSG_SEP)) {
+    nm.type = NodeMessageType::AUTO_CLOSE;
 
-    String nStr = MsgFmt::extractField(msg, KEY_NODE_ID);
-    if (nStr.length()) nodeMsg.nodeId = nStr.toInt();
+    String n = MsgFmt::extractField(raw, KEY_NODE_ID);
+    if (n.length()) nm.nodeId = n.toInt();
 
-    String reason = MsgFmt::extractField(msg, KEY_REASON);
-    nodeMsg.reason = reason.length() ? reason : "Auto-close triggered";
+    String r = MsgFmt::extractField(raw, KEY_REASON);
+    nm.reason = r.length() ? r : "Auto-close triggered";
 
   } else {
-    nodeMsg.type = NodeMessageType::UNKNOWN;
+    nm.type = NodeMessageType::UNKNOWN;
   }
 
-  return nodeMsg;
+  return nm;
 }
 
-// Process node-specific messages from the incoming queue.
-// FIX: Previous version had an infinite-loop bug — it re-enqueued non-node
-// messages then immediately broke, permanently blocking those messages from
-// being processed. The fix drains the entire queue into a temporary buffer,
-// dispatches node messages, then re-enqueues non-node messages so they are
-// visible to UserCommunication on the next iteration.
-void NodeCommunication::processNodeMessages() {
-  if (!initialized) return;
-
-  // Collect all currently queued messages
-  std::vector<String> nonNodeMessages;
-  String msg;
-
-  while (incomingQueue.dequeue(msg)) {
-    if (msg.startsWith(MSG_STAT_PREFIX MSG_SEP) || msg.startsWith(MSG_AUTO_CLOSE_PREFIX MSG_SEP)) {
-      Serial.println("[NodeComm] Processing node message: " + msg.substring(0, 40));
-
-      NodeMessage nodeMsg = parseNodeMessage(msg);
-
-      if (messageCallback) {
-        messageCallback(nodeMsg);
-      } else {
-        Serial.println("[NodeComm] ⚠ No callback set for node messages");
-      }
-    } else {
-      // Keep non-node messages to re-enqueue
-      nonNodeMessages.push_back(msg);
-    }
+// ─── printStatus() ────────────────────────────────────────────────────────────
+void NodeCommunication::printStatus() const {
+  Serial.println("[NodeComm] ===== NodeCommunication Status =====");
+  Serial.printf ("[NodeComm]  Initialized : %s\n", initialized ? "YES" : "NO");
+  Serial.printf ("[NodeComm]  Transports  : %d registered\n", (int)transports.size());
+  for (auto *t : transports) {
+    Serial.printf("[NodeComm]    %-8s : %s\n",
+                  t->transportName(), t->isAvailable() ? "available" : "unavailable");
   }
+  Serial.println("[NodeComm] ========================================");
+}
 
-  // Re-enqueue non-node messages for UserCommunication to process
-  for (const String &nonNode : nonNodeMessages) {
-    incomingQueue.enqueue(nonNode);
-  }
+int NodeCommunication::availableTransportCount() const {
+  int n = 0;
+  for (auto *t : transports) if (t->isAvailable()) n++;
+  return n;
 }
