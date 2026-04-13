@@ -130,6 +130,43 @@ bool CommSetup::initHTTP() {
 }
 #endif
 
+
+bool CommSetup::initNetworkRouter() {
+  printStepHeader("NetworkRouter");
+  status.totalModules++;
+
+  // Register available bearer modules (nullptr-safe — router guards internally)
+#if ENABLE_PPPOS
+  networkRouter.init(&modemPPPoS, 
+#  if ENABLE_WIFI
+                     &wifiComm
+#  else
+                     nullptr
+#  endif
+  );
+#elif ENABLE_WIFI
+  networkRouter.init(nullptr, &wifiComm);
+#else
+  networkRouter.init(nullptr, nullptr);
+  printStepFailure("NetworkRouter", "no bearers enabled (ENABLE_PPPOS=0, ENABLE_WIFI=0)");
+  return false;
+#endif
+
+  if (!networkRouter.connect()) {
+    printStepFailure("NetworkRouter", "no bearer came up — check PPPoS/WiFi config");
+    // Not fatal: MQTT/HTTP will report bearer unavailable at runtime
+    status.networkRouterOk = false;
+    // Still count as initialized (partial connectivity possible)
+    status.successfulModules++;
+    return false;
+  }
+
+  printStepSuccess("NetworkRouter");
+  status.networkRouterOk = true;
+  status.successfulModules++;
+  return true;
+}
+
 bool CommSetup::initNodeCommunication() {
   printStepHeader("Node Communication");
   status.totalModules++;
@@ -197,6 +234,9 @@ CommSetupStatus CommSetup::initializeAll() {
 #if ENABLE_PPPOS
   initPPPoS();   // Requires MODEM_MODE_DATA (mutually exclusive with SMS)
 #endif
+  // NetworkRouter must be initialized after all bearers (PPPoS / WiFi) are up
+  initNetworkRouter();
+
 #if ENABLE_MQTT
   initMQTT();
 #endif
@@ -249,6 +289,7 @@ void CommSetup::printSummary() {
 #if ENABLE_HTTP
   Serial.printf("  HTTP:   %s\n", status.httpOk   ? "✓ OK" : "✗ FAILED");
 #endif
+  Serial.printf("  Router:   %s\n", status.networkRouterOk ? "✓ OK" : "⚠ NO BEARER");
   Serial.printf("  Nodes:    %s\n", status.nodeCommOk ? "✓ OK" : "✗ FAILED");
   Serial.printf("  UserComm: %s\n", status.userCommOk ? "✓ OK" : "✗ FAILED");
   Serial.println("==========================================\n");
@@ -269,6 +310,7 @@ String CommSetup::getDetailedReport() const {
 #if ENABLE_PPPOS
   r += "PPPoS: " + String(status.ppposOk ? "OK" : "FAILED") + "\n";
 #endif
+  r += "Router:" + String(status.networkRouterOk ? "OK" : "NO BEARER") + "\n";
 #if ENABLE_MQTT
   r += "MQTT:  " + String(status.mqttOk  ? "OK" : "FAILED") + "\n";
 #endif
@@ -304,6 +346,7 @@ bool CommSetup::reinitModule(const String &moduleName) {
 #if ENABLE_HTTP
   if (m == "HTTP")   return initHTTP();
 #endif
+  if (m == "ROUTER") return initNetworkRouter();
   Serial.println("[CommSetup] Unknown module: " + moduleName);
   return false;
 }

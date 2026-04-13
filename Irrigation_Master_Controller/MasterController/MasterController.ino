@@ -11,6 +11,7 @@
 #include "NodeCommunication.h"
 #include "UserCommunication.h"
 #include "CommSetup.h"
+#include "NetworkRouter.h"
 #include "MessageFormats.h"
 
 // Optional module headers — only included when their flag is enabled.
@@ -204,6 +205,9 @@ void loop() {
 #if ENABLE_WIFI
   wifiComm.processBackground();
 #endif
+
+  // NetworkRouter: feeds PPP stack + detects dropped bearers + auto-reconnect
+  networkRouter.processBackground();
 
 #if ENABLE_MQTT
   mqtt.processBackground();

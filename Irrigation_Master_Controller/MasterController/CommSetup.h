@@ -27,6 +27,11 @@
   // modemBase is extern'd in ModemBase.h
 #endif
 
+// NetworkRouter is always included — it handles bearer selection
+// for MQTT and HTTP regardless of which bearers are enabled.
+#include "NetworkRouter.h"
+extern NetworkRouter networkRouter;
+
 #if ENABLE_SMS
   #include "ModemSMS.h"
   extern ModemSMS modemSMS;
@@ -61,7 +66,8 @@ struct CommSetupStatus {
   bool wifiOk;
   bool modemOk;
   bool smsOk;
-  bool ppposOk;      // ModemPPPoS init status
+  bool ppposOk;          // ModemPPPoS init status
+  bool networkRouterOk;  // NetworkRouter connect status
   bool mqttOk;
   bool httpOk;
   bool nodeCommOk;
@@ -72,7 +78,8 @@ struct CommSetupStatus {
 
   CommSetupStatus()
     : bleOk(false), loraOk(false), wifiOk(false), modemOk(false),
-      smsOk(false), ppposOk(false), mqttOk(false), httpOk(false),
+      smsOk(false), ppposOk(false), networkRouterOk(false),
+      mqttOk(false), httpOk(false),
       nodeCommOk(false), userCommOk(false),
       totalModules(0), successfulModules(0) {}
 
@@ -113,6 +120,7 @@ private:
 #if ENABLE_HTTP
   bool initHTTP();
 #endif
+  bool initNetworkRouter();
   bool initNodeCommunication();
   bool initUserCommunication();
 

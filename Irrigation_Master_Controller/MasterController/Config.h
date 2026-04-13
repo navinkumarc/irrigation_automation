@@ -144,6 +144,29 @@
 // NOTE: Cannot be active at the same time as ENABLE_SMS = 1.
 #define PPPOS_APN                 "airtelgprs.com"
 #define PPPOS_CONNECT_TIMEOUT_MS  30000
+// ========== NetworkRouter — Per-service bearer selection ==========
+// NetworkRouter routes MQTT and HTTP/REST traffic to either PPPoS
+// (cellular) or WiFi. Configure the PRIMARY bearer for each service
+// here. The OTHER bearer is automatically used as fallback.
+//
+// NET_BEARER_PPPOS = 1  — cellular data via ModemPPPoS
+// NET_BEARER_WIFI  = 2  — on-board WiFi via WiFiComm
+//
+// Examples:
+//   MQTT primary PPPoS, fallback WiFi:
+//     #define MQTT_PRIMARY_BEARER  NET_BEARER_PPPOS
+//   HTTP primary WiFi, fallback PPPoS:
+//     #define HTTP_PRIMARY_BEARER  NET_BEARER_WIFI
+//
+// Note: ENABLE_PPPOS and ENABLE_WIFI must be enabled for the
+//       corresponding bearer to be available at runtime.
+//       If a bearer is disabled (flag = 0), it will not be used
+//       even if listed as primary or fallback.
+#define NET_BEARER_PPPOS  1
+#define NET_BEARER_WIFI   2
+
+#define MQTT_PRIMARY_BEARER  NET_BEARER_PPPOS   // Primary: cellular, Fallback: WiFi
+#define HTTP_PRIMARY_BEARER  NET_BEARER_PPPOS   // Primary: cellular, Fallback: WiFi
 
 // ========== Modem / SMS Settings ==========
 #define MODEM_APN       "airtelgprs.com"
