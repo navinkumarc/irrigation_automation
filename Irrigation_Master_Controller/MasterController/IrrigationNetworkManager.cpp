@@ -3,7 +3,7 @@
 #include "IrrigationNetworkManager.h"
 
 #if ENABLE_PPPOS
-  #include "PPPoSManager.h"
+  #include "ModemPPPoS.h"
 #endif
 #if ENABLE_WIFI
   #include "WiFiComm.h"
@@ -21,7 +21,7 @@ IrrigationNetworkManager::IrrigationNetworkManager()
     reconnectInterval(60000) {
 }
 
-void IrrigationNetworkManager::init(PPPoSManager* pppos, WiFiComm* wifi, HardwareSerial* serial) {
+void IrrigationNetworkManager::init(ModemPPPoS* pppos, WiFiComm* wifi, HardwareSerial* serial) {
   Serial.println("[NetMgr] Initializing Network Manager...");
 
   ppposManager = pppos;

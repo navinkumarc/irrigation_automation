@@ -7,7 +7,7 @@
 #include "Config.h"
 
 // Forward declarations — actual headers included only when flags are set
-class PPPoSManager;
+class ModemPPPoS;
 class WiFiComm;
 
 enum class ConnectionType {
@@ -25,7 +25,7 @@ enum class NetworkState {
 
 class IrrigationNetworkManager {
 private:
-  PPPoSManager*   ppposManager;
+  ModemPPPoS*   ppposManager;
   WiFiComm*       wifiComm;
   HardwareSerial* modemSerial;
 
@@ -43,7 +43,7 @@ public:
   IrrigationNetworkManager();
 
   // Initialize with PPPoS and WiFi managers (either may be nullptr if disabled)
-  void init(PPPoSManager* pppos, WiFiComm* wifi, HardwareSerial* serial);
+  void init(ModemPPPoS* pppos, WiFiComm* wifi, HardwareSerial* serial);
 
   // Connect with automatic fallback (PPPoS first, then WiFi)
   bool connect(uint32_t pppos_timeout_ms = PPPOS_CONNECT_TIMEOUT_MS,

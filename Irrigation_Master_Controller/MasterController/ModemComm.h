@@ -1,6 +1,6 @@
 // ModemComm.h
 // NOTE: ModemComm is a legacy class kept for reference only.
-// For SMS use ModemSMS. For PPPoS data use PPPoSManager.
+// For SMS use ModemSMS. For PPPoS data use ModemPPPoS.
 // Do not instantiate ModemComm directly — it is not fully implemented.
 #ifndef MODEM_COMM_H
 #define MODEM_COMM_H

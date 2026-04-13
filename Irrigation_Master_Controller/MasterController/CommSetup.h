@@ -7,7 +7,6 @@
 #include <Arduino.h>
 #include "Config.h"
 
-// Optional module includes — only when their flag is enabled.
 #if ENABLE_BLE
   #include "BLEComm.h"
   extern BLEComm bleComm;
@@ -25,12 +24,17 @@
 
 #if ENABLE_MODEM
   #include "ModemBase.h"
-  // modemBase is extern'd in ModemBase.h already
+  // modemBase is extern'd in ModemBase.h
 #endif
 
 #if ENABLE_SMS
   #include "ModemSMS.h"
   extern ModemSMS modemSMS;
+#endif
+
+#if ENABLE_PPPOS
+  #include "ModemPPPoS.h"
+  extern ModemPPPoS modemPPPoS;
 #endif
 
 #if ENABLE_MQTT
@@ -43,7 +47,6 @@
   extern HTTPComm httpComm;
 #endif
 
-// Always-present modules
 #include "NodeCommunication.h"
 #include "UserCommunication.h"
 
@@ -58,6 +61,7 @@ struct CommSetupStatus {
   bool wifiOk;
   bool modemOk;
   bool smsOk;
+  bool ppposOk;      // ModemPPPoS init status
   bool mqttOk;
   bool httpOk;
   bool nodeCommOk;
@@ -68,7 +72,7 @@ struct CommSetupStatus {
 
   CommSetupStatus()
     : bleOk(false), loraOk(false), wifiOk(false), modemOk(false),
-      smsOk(false), mqttOk(false), httpOk(false),
+      smsOk(false), ppposOk(false), mqttOk(false), httpOk(false),
       nodeCommOk(false), userCommOk(false),
       totalModules(0), successfulModules(0) {}
 
@@ -85,7 +89,6 @@ private:
   int             stepCounter;
   static CommSetup *instance;
 
-  // Per-module init — each only compiled when its flag is enabled.
 #if ENABLE_BLE
   bool initBLE();
 #endif
@@ -100,6 +103,9 @@ private:
 #endif
 #if ENABLE_SMS
   bool initSMS();
+#endif
+#if ENABLE_PPPOS
+  bool initPPPoS();
 #endif
 #if ENABLE_MQTT
   bool initMQTT();

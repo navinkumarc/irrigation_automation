@@ -9,19 +9,32 @@
 
 // ========== Feature Enables ==========
 // Each flag is fully independent — enable only what you need.
-// Removing a module's .h/.cpp files is safe as long as its flag is set to 0.
+//
+// IMPORTANT — Modem mode constraint:
+//   ENABLE_SMS and ENABLE_PPPOS are MUTUALLY EXCLUSIVE.
+//   The EC200U modem can only be in AT command mode (SMS) OR PPP data mode
+//   at any one time. Set at most ONE of these to 1.
+//
+//   ENABLE_SMS  = 1  →  Modem used for SMS (AT command mode)
+//   ENABLE_PPPOS = 1  →  Modem used for cellular data (PPP mode)
+//
 #define ENABLE_LORA    1    // LoRa radio hardware
 #define ENABLE_BLE     1    // Bluetooth Low Energy
 #define ENABLE_WIFI    1    // WiFi (required by MQTT and HTTP REST API)
-#define ENABLE_SMS     1    // SMS via modem AT commands (EC200U)
-#define ENABLE_MQTT    1    // MQTT via WiFi (independent of SMS/modem)
-#define ENABLE_HTTP    1    // REST API via WiFi WebServer (independent)
+#define ENABLE_SMS     1    // SMS via modem AT commands — set 0 if ENABLE_PPPOS = 1
+#define ENABLE_MQTT    1    // MQTT via WiFi or PPPoS
+#define ENABLE_HTTP    1    // REST API via WiFi WebServer
 #define ENABLE_DISPLAY 1    // OLED/LCD display
 #define ENABLE_RTC     1    // Real-time clock (DS3231)
-#define ENABLE_PPPOS   0    // PPPoS cellular data (set 1 to enable, requires modem)
+#define ENABLE_PPPOS   0    // Cellular data via PPPoS — set 0 if ENABLE_SMS = 1
+
+// Compile-time enforcement of the SMS / PPPoS mutual-exclusion rule
+#if ENABLE_SMS && ENABLE_PPPOS
+  #error "ENABLE_SMS and ENABLE_PPPOS cannot both be 1. The modem supports only one mode at a time."
+#endif
 
 // ========== Modem Hardware ==========
-// Modem hardware is needed for SMS or PPPoS. Derived automatically — do not edit.
+// Derived automatically — do not edit.
 #if ENABLE_SMS || ENABLE_PPPOS
   #define ENABLE_MODEM 1
 #else
@@ -29,7 +42,6 @@
 #endif
 
 // ========== SMS Sub-features ==========
-// Derived from ENABLE_SMS — do not edit.
 #if ENABLE_SMS
   #define ENABLE_SMS_COMMANDS 1
   #define ENABLE_SMS_ALERTS   1
@@ -39,8 +51,8 @@
 #endif
 
 // ========== LoRa Feature Flags ==========
-#define ENABLE_LORA_USER_COMM 1    // Accept user commands via LoRa
-#define ENABLE_LORA_NODE_COMM 1    // Communicate with irrigation nodes via LoRa
+#define ENABLE_LORA_USER_COMM 1
+#define ENABLE_LORA_NODE_COMM 1
 
 // ========== Communication Channel Commands ==========
 #define ENABLE_BLE_COMMANDS  1
@@ -55,7 +67,6 @@
 #define INCOMING_QUEUE_SIZE 10
 
 // ========== Pin Definitions ==========
-// LoRa SX1276
 #define LORA_SCK  9
 #define LORA_MISO 11
 #define LORA_MOSI 10
@@ -63,21 +74,17 @@
 #define LORA_RST  12
 #define LORA_DIO0 14
 
-// Modem EC200U
 #define MODEM_RX     45
 #define MODEM_TX     46
 #define MODEM_PWRKEY 4
 #define MODEM_RESET  15
 
-// Pump Control
 #define PUMP_PIN         25
 #define PUMP_ACTIVE_HIGH true
 
-// RTC DS3231
 #define RTC_SDA 41
 #define RTC_SCL 42
 
-// Display
 #define DISPLAY_SDA 21
 #define DISPLAY_SCL 22
 
@@ -95,11 +102,11 @@
 #define TX_OUTPUT_POWER        14
 #define LORA_TX_POWER          14
 
-#define LORA_GATEWAY_ID    255
-#define LORA_BROADCAST_ID  0
-#define MAX_RETRIES        3
-#define LORA_MAX_RETRIES   3
-#define ACK_TIMEOUT_MS     5000
+#define LORA_GATEWAY_ID     255
+#define LORA_BROADCAST_ID   0
+#define MAX_RETRIES         3
+#define LORA_MAX_RETRIES    3
+#define ACK_TIMEOUT_MS      5000
 #define LORA_ACK_TIMEOUT_MS 5000
 
 // ========== WiFi Settings ==========
@@ -115,8 +122,6 @@
 #define NTP_TIMEZONE_OFFSET  0
 
 // ========== MQTT Settings ==========
-// MQTT works independently over WiFi (ESP-IDF MQTT client).
-// No dependency on SMS or modem.
 #define MQTT_BROKER    "39aff691b9b5421ab98adc2addedbd83.s1.eu.hivemq.cloud"
 #define MQTT_PORT      8883
 #define MQTT_USE_SSL   1
@@ -135,15 +140,13 @@
 #define DEFAULT_MQTT_PASS   MQTT_PASS
 
 // ========== PPPoS Settings ==========
-// Used when ENABLE_PPPOS = 1. PPPoS provides cellular data via EC200U modem.
-#define PPPOS_APN                  "airtelgprs.com"
-#define PPPOS_CONNECT_TIMEOUT_MS   30000   // 30 seconds
-#define WIFI_PPPOS_TIMEOUT_MS      15000   // WiFi fallback timeout
+// Used when ENABLE_PPPOS = 1.
+// NOTE: Cannot be active at the same time as ENABLE_SMS = 1.
+#define PPPOS_APN                 "airtelgprs.com"
+#define PPPOS_CONNECT_TIMEOUT_MS  30000
 
 // ========== Modem / SMS Settings ==========
-// Modem UART is used for SMS AT commands and/or PPPoS.
-// MQTT and HTTP REST API work independently over WiFi.
-#define MODEM_APN     "airtelgprs.com"
+#define MODEM_APN       "airtelgprs.com"
 #define DEFAULT_SIM_APN MODEM_APN
 
 #define SMS_ALERT_PHONE_1         "+919944272647"
@@ -177,21 +180,21 @@
 #define MAX_SEQUENCE_STEPS 20
 
 // ========== Timing Defaults ==========
-#define PUMP_ON_LEAD_DEFAULT_MS       3000
-#define PUMP_OFF_DELAY_DEFAULT_MS     3000
-#define LAST_CLOSE_DELAY_MS_DEFAULT   2000
-#define VALVE_OPEN_DELAY_MS           500
-#define SAVE_PROGRESS_INTERVAL_MS     60000
+#define PUMP_ON_LEAD_DEFAULT_MS     3000
+#define PUMP_OFF_DELAY_DEFAULT_MS   3000
+#define LAST_CLOSE_DELAY_MS_DEFAULT 2000
+#define VALVE_OPEN_DELAY_MS         500
+#define SAVE_PROGRESS_INTERVAL_MS   60000
 
 // ========== System Settings ==========
 #define SERIAL_BAUD 115200
 #define QUEUE_SIZE  10
 
 // ========== Network Settings ==========
-#define MQTT_CONNECT_TIMEOUT_MS          10000
-#define SMS_SEND_TIMEOUT_MS              30000
-#define NETWORK_REGISTRATION_TIMEOUT_S   120
-#define NETWORK_RECONNECT_INTERVAL_MS    60000
+#define MQTT_CONNECT_TIMEOUT_MS         10000
+#define SMS_SEND_TIMEOUT_MS             30000
+#define NETWORK_REGISTRATION_TIMEOUT_S  120
+#define NETWORK_RECONNECT_INTERVAL_MS   60000
 
 #define MQTT_MAX_RECONNECT_ATTEMPTS 5
 #define MQTT_RECONNECT_DELAY_MS     5000
@@ -200,9 +203,9 @@
 struct SystemConfig {
   char device_id[32];
   uint32_t lora_frequency;
-  uint8_t lora_sf;
-  bool enable_sms_broadcast;
-  char timezone[32];
+  uint8_t  lora_sf;
+  bool     enable_sms_broadcast;
+  char     timezone[32];
 
   String mqttServer;
   int    mqttPort;
@@ -236,24 +239,24 @@ struct Schedule {
   uint32_t pump_off_after_ms;
 };
 
-// ========== Global State (defined in main .ino) ==========
-extern SystemConfig sysConfig;
+// ========== Global State (defined in MasterController.ino) ==========
+extern SystemConfig       sysConfig;
 extern std::vector<Schedule> schedules;
-extern String currentScheduleId;
-extern std::vector<SeqStep> seq;
-extern int currentStepIndex;
-extern unsigned long stepStartMillis;
-extern bool scheduleLoaded;
-extern bool scheduleRunning;
-extern time_t scheduleStartEpoch;
-extern uint32_t pumpOnBeforeMs;
-extern uint32_t pumpOffAfterMs;
-extern uint32_t LAST_CLOSE_DELAY_MS;
-extern uint32_t DRIFT_THRESHOLD_S;
-extern uint32_t SYNC_CHECK_INTERVAL_MS;
-extern bool ENABLE_SMS_BROADCAST;
+extern String             currentScheduleId;
+extern std::vector<SeqStep>  seq;
+extern int                currentStepIndex;
+extern unsigned long      stepStartMillis;
+extern bool               scheduleLoaded;
+extern bool               scheduleRunning;
+extern time_t             scheduleStartEpoch;
+extern uint32_t           pumpOnBeforeMs;
+extern uint32_t           pumpOffAfterMs;
+extern uint32_t           LAST_CLOSE_DELAY_MS;
+extern uint32_t           DRIFT_THRESHOLD_S;
+extern uint32_t           SYNC_CHECK_INTERVAL_MS;
+extern bool               ENABLE_SMS_BROADCAST;
 
-// ========== Debug Settings ==========
+// ========== Debug Flags ==========
 // #define DEBUG_LORA
 // #define DEBUG_MQTT
 // #define DEBUG_SMS
@@ -297,9 +300,9 @@ class StorageManager;
 class LoRaComm;
 class Preferences;
 
-extern MessageQueue incomingQueue;
+extern MessageQueue  incomingQueue;
 extern StorageManager storage;
-extern LoRaComm loraComm;
-extern Preferences prefs;
+extern LoRaComm      loraComm;
+extern Preferences   prefs;
 
 #endif // CONFIG_H
