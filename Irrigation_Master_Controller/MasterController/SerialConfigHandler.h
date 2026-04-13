@@ -1,42 +1,25 @@
 // SerialConfigHandler.h  —  Serial config console
 //
-// Intercepts configuration commands on the Serial channel.
-// Called by CommManager::pollSerial() BEFORE the normal command dispatcher.
-// Returns true if the line was a config command (caller must not process it further).
+// Intercepts config commands from pollSerial() before UserCommunication.
+// Delegates persistence to StorageManager.
 //
-// Storage: delegates to StorageManager for persistence.
-//   SAVE CONFIG  → storage.saveCommConfig(commCfg)
-//   RESET CONFIG → storage.resetCommConfig(commCfg)
+// Channel model enforced:
+//   Mutually exclusive (SET CHANNEL):  SMS | MQTT | HTTP | NONE
+//   Independent (ENABLE/DISABLE):      BLE | LORA
+//   Bearer (ENABLE/DISABLE):           PPPOS | WIFI
+//   Serial: always ON, not configurable
 //
-// ═══════════════════════════════════════════════════════
-//  CONFIG HELP                     Show this reference
-//  SHOW CONFIG                     Print current settings
-//  SAVE CONFIG                     Persist to LittleFS
-//  RESET CONFIG                    Restore firmware defaults
-// ───────────────────────────────────────────────────────
-//  ENABLE  SMS | INTERNET | BLE | LORA
-//  DISABLE SMS | DATA | BLE | LORA
-//  (Serial cannot be disabled)
-// ───────────────────────────────────────────────────────
-//  SET BEARER    WIFI | PPPOS
-//  SET WIFI_SSID <ssid>
-//  SET WIFI_PASS <password>
-//  SET APN       <apn>
-//  SET MQTT_BROKER <host>
-//  SET MQTT_PORT   <number>
-//  SET MQTT_USER   <username>
-//  SET MQTT_PASS   <password>
-//  SET MQTT_CID    <client-id>
-//  SET MQTT_TLS    ON | OFF
-//  SET SMS_PHONE1  +<E.164>
-//  SET SMS_PHONE2  +<E.164>
-//  SET BLE_NAME    <n>
-//  SET LORA_FREQ   <Hz>
-//  SET HTTP_PORT   <number>
-// ═══════════════════════════════════════════════════════
-//  Changes are live in memory immediately.
-//  Run SAVE CONFIG to persist across reboots.
-//  Most changes require a reboot to take full effect.
+// Quick reference:
+//   CONFIG HELP          Full reference
+//   SHOW CONFIG          Print current settings
+//   SAVE CONFIG          Persist to LittleFS (/commconfig.json)
+//   RESET CONFIG         Restore firmware defaults
+//   SET CHANNEL SMS|MQTT|HTTP|NONE
+//   ENABLE/DISABLE BLE|LORA|PPPOS|WIFI
+//   SET WIFI_SSID / WIFI_PASS / APN
+//   SET MQTT_BROKER / MQTT_PORT / MQTT_USER / MQTT_PASS / MQTT_CID / MQTT_TLS
+//   SET SMS_PHONE1 / SMS_PHONE2
+//   SET BLE_NAME / LORA_FREQ / HTTP_PORT
 
 #ifndef SERIAL_CONFIG_HANDLER_H
 #define SERIAL_CONFIG_HANDLER_H
@@ -48,10 +31,10 @@
 class SerialConfigHandler {
   StorageManager &_storage;
 
-  bool handleEnable (const String &up, const String &raw);
-  bool handleDisable(const String &up, const String &raw);
-  bool handleSet    (const String &up, const String &raw);
-  void printHelp    () const;
+  bool handleSetChannel(const String &up);
+  bool handleBearer    (const String &up, bool enable);
+  bool handleSet       (const String &up, const String &raw);
+  void printHelp       () const;
 
 public:
   explicit SerialConfigHandler(StorageManager &storage) : _storage(storage) {}

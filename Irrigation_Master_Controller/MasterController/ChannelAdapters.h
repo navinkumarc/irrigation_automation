@@ -33,7 +33,7 @@ public:
   const char* channelName() const override { return "SMS"; }
 
   bool isAvailable() const override {
-    return commCfg.chSMS && _sms.isReady();
+    return commCfg.isSMS() && _sms.isReady();
   }
 
   bool send(const String &message) override {
@@ -63,7 +63,7 @@ public:
   const char* channelName() const override { return "Internet"; }
 
   bool isAvailable() const override {
-    return commCfg.chInternet && _mqtt.isConnected();
+    return commCfg.isMQTT() && _mqtt.isConnected();
   }
 
   bool send(const String &message) override {

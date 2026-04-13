@@ -179,10 +179,11 @@ String UserCommunication::formatStatusBrief(const SystemStatus &sys) const {
   String s = "[Status] ";
   s += "Sched:"     + String(sys.scheduleRunning ? "RUN" : "IDLE") + " ";
   s += "SMS:"       + String(sys.smsReady       ? "OK" : "--") + " ";
-  s += "Internet:" + String(sys.internetConnected ? "OK" : "--")
-     + "[" + sys.bearerName + "] ";
-  s += "BT:"        + String(sys.bleConnected   ? "OK" : "--") + " ";
-  s += "LoRa:"      + String(sys.loraUp         ? "OK" : "--") + " ";
+  s += "Ch:" + sys.activeChannelName + " ";
+  s += "MQTT:" + String(sys.mqttConnected ? "OK" : "--") + " ";
+  s += "HTTP:" + String(sys.httpReady     ? "OK" : "--") + " ";
+  s += "BT:"   + String(sys.bleConnected  ? "OK" : "--") + " ";
+  s += "LoRa:" + String(sys.loraUp        ? "OK" : "--") + " ";
   s += "Heap:"      + String(sys.freeHeapBytes / 1024) + "KB";
   return s;
 }
@@ -192,20 +193,19 @@ String UserCommunication::formatStatusText(const SystemStatus &sys) const {
   t += "SCHEDULE:\n";
   t += "  Running:  " + String(sys.scheduleRunning ? "YES (" + sys.currentScheduleId + ")" : "NO") + "\n";
   t += "  Schedules:" + String(sys.enabledSchedules) + "/" + String(sys.totalSchedules) + " enabled\n";
-  t += "USER CHANNELS:\n";
-  t += "  SMS:       " + String(sys.smsReady          ? "OK (AT mode)"   : "Off") + "\n";
-  t += "  Internet:  " + String(sys.internetConnected ? "OK"             : "Off")
-     + " [bearer: " + sys.bearerName + "]\n";
-  t += "  Bluetooth: " + String(sys.bleConnected      ? "OK (connected)" : "Off/no client") + "\n";
-  t += "  LoRa:      " + String(sys.loraUp            ? "OK"             : "Off") + "\n";
+  t += "ACTIVE CHANNEL (mutually exclusive):\n";
+  t += "  Channel:   " + sys.activeChannelName + "\n";
+  t += "  SMS:       " + String(sys.smsReady      ? "OK (AT mode)"   : "Off") + "\n";
+  t += "  MQTT:      " + String(sys.mqttConnected ? "OK (connected)" : "Off") + "\n";
+  t += "  HTTP:      " + String(sys.httpReady     ? "OK (listening)" : "Off") + "\n";
+  t += "INDEPENDENT CHANNELS:\n";
+  t += "  Bluetooth: " + String(sys.bleConnected  ? "OK (connected)" : "Off/no client") + "\n";
+  t += "  LoRa:      " + String(sys.loraUp        ? "OK"             : "Off") + "\n";
   t += "  Serial:    always ON\n";
-  t += "INTERNET BEARER:\n";
-  t += "  WiFi:  " + String(sys.wifiUp  ? "Up" : "Down") + "\n";
-  t += "  PPPoS: " + String(sys.ppposUp ? "Up" : "Down") + "\n";
+  t += "INTERNET BEARER (for MQTT/HTTP):\n";
+  t += "  PPPoS: " + String(sys.ppposUp ? "Up (primary)" : "Down") + "\n";
+  t += "  WiFi:  " + String(sys.wifiUp  ? "Up (fallback)" : "Down") + "\n";
   t += "  IP:    " + (sys.networkIP.length() ? sys.networkIP : "N/A") + "\n";
-  t += "SERVICES:\n";
-  t += "  MQTT:  " + String(sys.mqttConnected ? "Connected" : "Off") + "\n";
-  t += "  HTTP:  " + String(sys.httpReady     ? "Listening" : "Off") + "\n";
   t += "SYSTEM:\n";
   t += "  Uptime:  " + String(sys.uptimeSeconds) + "s\n";
   t += "  Heap:    " + String(sys.freeHeapBytes / 1024) + "KB free\n";
@@ -220,17 +220,17 @@ String UserCommunication::formatStatusJSON(const SystemStatus &sys) const {
   j += "  \"schedule\": {\"running\":" + String(sys.scheduleRunning ? "true" : "false")
      + ",\"enabled\":" + String(sys.enabledSchedules)
      + ",\"total\":"   + String(sys.totalSchedules) + "},\n";
-  j += "  \"channels\": {\"sms\":" + String(sys.smsReady           ? "true" : "false")
-     + ",\"internet\":" + String(sys.internetConnected ? "true" : "false")
-     + ",\"ble\":" + String(sys.bleConnected         ? "true" : "false")
-     + ",\"lora\":" + String(sys.loraUp              ? "true" : "false")
+  j += "  \"activeChannel\":\"" + sys.activeChannelName + "\",\n";
+  j += "  \"channels\": {\"sms\":" + String(sys.smsReady      ? "true" : "false")
+     + ",\"mqtt\":" + String(sys.mqttConnected ? "true" : "false")
+     + ",\"http\":" + String(sys.httpReady     ? "true" : "false")
+     + ",\"ble\":" + String(sys.bleConnected   ? "true" : "false")
+     + ",\"lora\":" + String(sys.loraUp        ? "true" : "false")
      + ",\"serial\":true},\n";
-  j += "  \"bearer\": {\"name\":\"" + sys.bearerName + "\","
-     + "\"wifi\":" + String(sys.wifiUp  ? "true" : "false")
-     + ",\"pppos\":" + String(sys.ppposUp ? "true" : "false")
-     + ",\"ip\":\"" + sys.networkIP + "\"},\n";
-  j += "  \"services\": {\"mqtt\":" + String(sys.mqttConnected ? "true" : "false")
-     + ",\"http\":" + String(sys.httpReady ? "true" : "false") + "},\n";
+  j += "  \"bearer\": {\"name\":\"" + sys.bearerName + "\"";
+  j += ",\"pppos\":" + String(sys.ppposUp ? "true" : "false");
+  j += ",\"wifi\":" + String(sys.wifiUp  ? "true" : "false");
+  j += ",\"ip\":\"" + sys.networkIP + "\"},\n";
   j += "  \"system\": {\"uptimeSec\":" + String(sys.uptimeSeconds)
      + ",\"freeHeap\":"  + String(sys.freeHeapBytes)
      + ",\"heapUsePct\":" + String(heapPct) + "}\n";

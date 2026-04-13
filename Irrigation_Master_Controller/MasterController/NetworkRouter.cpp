@@ -1,5 +1,6 @@
 // NetworkRouter.cpp - Data provider selection and fallback management
 #include "NetworkRouter.h"
+#include "CommConfig.h"
 
 #if ENABLE_PPPOS
   #include "ModemPPPoS.h"
@@ -170,7 +171,7 @@ bool NetworkRouter::bringUpPPPoS(uint32_t timeout_ms) {
 bool NetworkRouter::bringUpWiFi(uint32_t timeout_ms) {
 #if ENABLE_WIFI
   if (!wifi) return false;
-  return wifi->init(WIFI_SSID, WIFI_PASS);
+  return wifi->init(commCfg.wifiSSID, commCfg.wifiPass);
 #else
   return false;
 #endif

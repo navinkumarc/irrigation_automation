@@ -59,21 +59,21 @@ struct SystemStatus {
   int      enabledSchedules   = 0;
   int      totalSchedules     = 0;
 
-  // ── User channels ─────────────────────────────────────────────────────────
-  bool     smsReady           = false;   // SMS channel (modem AT mode)
-  bool     internetConnected  = false;   // Internet channel (MQTT broker reachable)
-  bool     bleConnected       = false;   // Bluetooth channel
-  bool     loraUp             = false;   // LoRa channel
+  // ── Active channel (mutually exclusive group) ────────────────────────────
+  bool     smsReady           = false;   // SMS channel active and modem ready
+  bool     mqttConnected      = false;   // MQTT channel active and broker connected
+  bool     httpReady          = false;   // HTTP channel active and server listening
+  String   activeChannelName;            // "SMS" | "MQTT" | "HTTP" | "NONE"
 
-  // ── Data bearer detail (informational, not a user channel) ────────────────
-  bool     wifiUp             = false;   // WiFi bearer connected
-  bool     ppposUp            = false;   // PPPoS bearer connected
+  // ── Independent channels ──────────────────────────────────────────────────
+  bool     bleConnected       = false;   // Bluetooth connected
+  bool     loraUp             = false;   // LoRa radio ready
+
+  // ── Internet bearer (used by MQTT/HTTP) ──────────────────────────────────
+  bool     wifiUp             = false;   // WiFi bearer up
+  bool     ppposUp            = false;   // PPPoS bearer up
   String   bearerName;                   // "WiFi" | "PPPoS" | "None"
   String   networkIP;                    // IP from active bearer
-
-  // ── Services ──────────────────────────────────────────────────────────────
-  bool     mqttConnected      = false;   // MQTT broker connected
-  bool     httpReady          = false;   // HTTP server listening
 
   // ── System ────────────────────────────────────────────────────────────────
   uint32_t freeHeapBytes      = 0;

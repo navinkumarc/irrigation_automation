@@ -103,12 +103,16 @@ bool CommManager::initPPPoS() {
 bool CommManager::initNetworkRouter() {
   printStepHeader("NetworkRouter");
   initStatus.totalModules++;
+  // Runtime bearer selection: use commCfg flags to decide which bearers to pass.
+  // PPPoS = primary, WiFi = fallback. NetworkRouter handles bring-up order.
 #if ENABLE_PPPOS && ENABLE_WIFI
-  networkRouter.init(&modemPPPoS, &wifiComm);
+  networkRouter.init(
+    commCfg.enablePPPoS ? &modemPPPoS : nullptr,
+    commCfg.enableWiFi  ? &wifiComm   : nullptr);
 #elif ENABLE_PPPOS
-  networkRouter.init(&modemPPPoS, nullptr);
+  networkRouter.init(commCfg.enablePPPoS ? &modemPPPoS : nullptr, nullptr);
 #elif ENABLE_WIFI
-  networkRouter.init(nullptr, &wifiComm);
+  networkRouter.init(nullptr, commCfg.enableWiFi ? &wifiComm : nullptr);
 #else
   networkRouter.init(nullptr, nullptr);
   printStepFailure("NetworkRouter", "no bearers enabled");
@@ -454,14 +458,19 @@ SystemStatus CommManager::buildSystemStatus() const {
     for (auto &sch : *schedules) if (sch.enabled) s.enabledSchedules++;
   }
 
-  // ── User channels ─────────────────────────────────────────────────────
+  // ── Active channel ────────────────────────────────────────────────────
+  s.activeChannelName = commCfg.activeChannelName();
 #if ENABLE_SMS
-  s.smsReady     = initStatus.smsOk && modemSMS.isReady();
+  s.smsReady      = commCfg.isSMS()  && initStatus.smsOk  && modemSMS.isReady();
 #endif
 #if ENABLE_MQTT
-  s.mqttConnected = initStatus.mqttOk && mqtt.isConnected();
-  s.internetConnected = s.mqttConnected;   // Internet channel = MQTT reachable
+  s.mqttConnected = commCfg.isMQTT() && initStatus.mqttOk && mqtt.isConnected();
 #endif
+#if ENABLE_HTTP
+  s.httpReady     = commCfg.isHTTP() && initStatus.httpOk && httpComm.isReady();
+#endif
+
+  // ── Independent channels ──────────────────────────────────────────────
 #if ENABLE_BLE
   s.bleConnected = initStatus.bleOk && bleComm.isConnected();
 #endif
@@ -469,33 +478,16 @@ SystemStatus CommManager::buildSystemStatus() const {
   s.loraUp = initStatus.loraOk;
 #endif
 
-  // ── Internet bearer detail ───────────────────────────────────────────
-#if ENABLE_WIFI
-  s.wifiUp = initStatus.wifiOk && wifiComm.isConnected();
-  if (s.wifiUp && s.networkIP.length() == 0)
-    s.networkIP = wifiComm.getIPAddress();
-#endif
+  // ── Internet bearer: PPPoS primary, WiFi fallback ─────────────────────
 #if ENABLE_PPPOS
   s.ppposUp = initStatus.ppposOk && modemPPPoS.isConnected();
-  if (s.ppposUp && s.networkIP.length() == 0)
-    s.networkIP = modemPPPoS.getLocalIP();
-#endif
-
-  // Bearer name reflects which bearer is actually up
-#if ENABLE_PPPOS
-  if (s.ppposUp)      s.bearerName = "PPPoS";
-  else
+  if (s.ppposUp) s.networkIP = modemPPPoS.getLocalIP();
 #endif
 #if ENABLE_WIFI
-  if (s.wifiUp)       s.bearerName = "WiFi";
-  else
+  s.wifiUp = initStatus.wifiOk && wifiComm.isConnected();
+  if (s.wifiUp && s.networkIP.length() == 0) s.networkIP = wifiComm.getIPAddress();
 #endif
-                      s.bearerName = "None";
-
-  // ── Services ──────────────────────────────────────────────────────────
-#if ENABLE_HTTP
-  s.httpReady = initStatus.httpOk && httpComm.isReady();
-#endif
+  s.bearerName = s.ppposUp ? "PPPoS" : (s.wifiUp ? "WiFi" : "None");
 
   return s;
 }

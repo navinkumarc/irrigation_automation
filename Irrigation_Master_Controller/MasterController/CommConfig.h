@@ -1,22 +1,30 @@
 // CommConfig.h  —  Runtime communication configuration (in-memory struct)
 //
-// CommConfig holds all runtime-editable communication settings in memory.
-// It has NO persistence logic — StorageManager owns load/save entirely.
+// CommConfig holds all runtime-editable comm settings.
+// NO persistence logic here — StorageManager owns load/save entirely.
 //
-// Channel model:
-//   SMS        modem AT mode
-//   Internet  MQTT over data bearer (WiFi or PPPoS)
-//   Bluetooth  BLE notify/write
-//   LoRa       user broadcast
-//   Serial     always-on config console (cannot be disabled)
+// ── Channel model ────────────────────────────────────────────────────────────
 //
-//   WiFi and PPPoS are DATA BEARERS (transport), NOT user channels.
+//   Mutually exclusive (only ONE active at a time):
+//     SMS    — modem AT mode, text alerts and commands
+//     MQTT   — MQTT over internet bearer (WiFi or PPPoS)
+//     HTTP   — REST API over internet bearer (WiFi or PPPoS)
 //
-// Lifecycle:
-//   1. storage.loadCommConfig(commCfg)  — called in setup() before commMgr.begin()
+//   Independent:
+//     Bluetooth — BLE notify/write, always enabled by default
+//     LoRa      — user broadcast, independent enable/disable
+//     Serial    — always ON, config console, NOT stored here
+//
+// ── Internet bearer (only used when MQTT or HTTP is active) ──────────────────
+//   PPPoS  — primary cellular data via modem
+//   WiFi   — fallback / alternative Wi-Fi
+//   Both can be enabled; PPPoS is primary, WiFi is fallback.
+//
+// ── Lifecycle ────────────────────────────────────────────────────────────────
+//   1. storage.loadCommConfig(commCfg)   — setup(), before commMgr.begin()
 //   2. SerialConfigHandler mutates commCfg fields in memory
-//   3. storage.saveCommConfig(commCfg)  — called on SAVE CONFIG command
-//   4. storage.resetCommConfig(commCfg) — called on RESET CONFIG command
+//   3. storage.saveCommConfig(commCfg)   — on "SAVE CONFIG"
+//   4. storage.resetCommConfig(commCfg)  — on "RESET CONFIG"
 
 #ifndef COMM_CONFIG_H
 #define COMM_CONFIG_H
@@ -24,30 +32,35 @@
 #include <Arduino.h>
 #include "Config.h"
 
-// Data bearer tokens
-#define DATA_BEARER_WIFI  1
-#define DATA_BEARER_PPPOS 2
+// ── Active channel (mutually exclusive group) ─────────────────────────────────
+enum class ActiveChannel : uint8_t {
+  NONE = 0,
+  SMS  = 1,
+  MQTT = 2,
+  HTTP = 3
+};
 
 struct CommConfig {
 
-  // ── User channel enables ──────────────────────────────────────────────────
-  bool chSMS;          // SMS channel
-  bool chInternet;     // Internet channel (MQTT over WiFi/PPPoS)
-  bool chBluetooth;    // Bluetooth channel
-  bool chLoRa;         // LoRa channel
-  // Serial is always enabled — no flag needed
+  // ── Mutually exclusive active channel ────────────────────────────────────
+  ActiveChannel activeChannel;   // SMS | MQTT | HTTP (only one at a time)
 
-  // ── Data bearer ───────────────────────────────────────────────────────────
-  uint8_t dataBearerPrimary;   // DATA_BEARER_WIFI or DATA_BEARER_PPPOS
+  // ── Independent channels ──────────────────────────────────────────────────
+  bool chBluetooth;   // Bluetooth — always enabled by default
+  bool chLoRa;        // LoRa user broadcast
 
-  // ── WiFi ──────────────────────────────────────────────────────────────────
+  // ── Internet bearer (used when activeChannel == MQTT or HTTP) ────────────
+  bool enablePPPoS;   // Enable PPPoS (cellular) as primary bearer
+  bool enableWiFi;    // Enable WiFi as fallback bearer
+
+  // ── WiFi credentials ──────────────────────────────────────────────────────
   String wifiSSID;
   String wifiPass;
 
   // ── PPPoS / cellular ──────────────────────────────────────────────────────
   String cellularAPN;
 
-  // ── MQTT ──────────────────────────────────────────────────────────────────
+  // ── MQTT settings ─────────────────────────────────────────────────────────
   String   mqttBroker;
   uint16_t mqttPort;
   String   mqttUser;
@@ -55,51 +68,77 @@ struct CommConfig {
   String   mqttClientId;
   bool     mqttTLS;
 
-  // ── SMS ───────────────────────────────────────────────────────────────────
-  String smsPhone1;
-  String smsPhone2;
+  // ── SMS settings ──────────────────────────────────────────────────────────
+  String smsPhone1;   // Primary admin phone (E.164)
+  String smsPhone2;   // Secondary admin phone (empty = disabled)
 
-  // ── Bluetooth ─────────────────────────────────────────────────────────────
+  // ── Bluetooth settings ────────────────────────────────────────────────────
   String bleName;
 
-  // ── LoRa ──────────────────────────────────────────────────────────────────
+  // ── LoRa settings ─────────────────────────────────────────────────────────
   uint32_t loraFrequencyHz;
 
-  // ── HTTP ──────────────────────────────────────────────────────────────────
+  // ── HTTP settings ─────────────────────────────────────────────────────────
   uint16_t httpPort;
 
   // ── Constructor: populate from Config.h compile-time defaults ─────────────
   CommConfig() {
-    chSMS             = (ENABLE_SMS            == 1);
-    chInternet        = (ENABLE_MQTT           == 1);
-    chBluetooth       = (ENABLE_BLE            == 1);
-    chLoRa            = (ENABLE_LORA_USER_COMM == 1);
-    dataBearerPrimary = DATA_BEARER_WIFI;
-    wifiSSID          = WIFI_SSID;
-    wifiPass          = WIFI_PASS;
-    cellularAPN       = PPPOS_APN;
-    mqttBroker        = MQTT_BROKER;
-    mqttPort          = MQTT_PORT;
-    mqttUser          = MQTT_USER;
-    mqttPass          = MQTT_PASS;
-    mqttClientId      = MQTT_CLIENT_ID;
-    mqttTLS           = (MQTT_USE_SSL == 1);
-    smsPhone1         = SMS_ALERT_PHONE_1;
-    smsPhone2         = SMS_ALERT_PHONE_2;
-    bleName           = BLE_DEVICE_NAME;
-    loraFrequencyHz   = RF_FREQUENCY;
-    httpPort          = HTTP_SERVER_PORT;
+    // Default active channel: SMS (or MQTT if SMS not compiled in)
+    activeChannel   = (ENABLE_SMS  == 1) ? ActiveChannel::SMS  :
+                      (ENABLE_MQTT == 1) ? ActiveChannel::MQTT :
+                      (ENABLE_HTTP == 1) ? ActiveChannel::HTTP :
+                                           ActiveChannel::NONE;
+
+    chBluetooth     = true;                   // Always enabled by default
+    chLoRa          = (ENABLE_LORA_USER_COMM == 1);
+
+    // Bearer defaults: PPPoS primary if compiled, WiFi as fallback
+    enablePPPoS     = (ENABLE_PPPOS == 1);
+    enableWiFi      = (ENABLE_WIFI  == 1);
+
+    wifiSSID        = WIFI_SSID;
+    wifiPass        = WIFI_PASS;
+    cellularAPN     = PPPOS_APN;
+
+    mqttBroker      = MQTT_BROKER;
+    mqttPort        = MQTT_PORT;
+    mqttUser        = MQTT_USER;
+    mqttPass        = MQTT_PASS;
+    mqttClientId    = MQTT_CLIENT_ID;
+    mqttTLS         = (MQTT_USE_SSL == 1);
+
+    smsPhone1       = SMS_ALERT_PHONE_1;
+    smsPhone2       = SMS_ALERT_PHONE_2;
+
+    bleName         = BLE_DEVICE_NAME;
+    loraFrequencyHz = RF_FREQUENCY;
+    httpPort        = HTTP_SERVER_PORT;
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  const char* bearerName() const {
-    return (dataBearerPrimary == DATA_BEARER_PPPOS) ? "PPPoS" : "WiFi";
+  // ── Channel query helpers ─────────────────────────────────────────────────
+  bool isSMS()  const { return activeChannel == ActiveChannel::SMS;  }
+  bool isMQTT() const { return activeChannel == ActiveChannel::MQTT; }
+  bool isHTTP() const { return activeChannel == ActiveChannel::HTTP; }
+
+  // Returns true when an internet bearer is needed
+  bool needsInternet() const {
+    return activeChannel == ActiveChannel::MQTT ||
+           activeChannel == ActiveChannel::HTTP;
+  }
+
+  const char* activeChannelName() const {
+    switch (activeChannel) {
+      case ActiveChannel::SMS:  return "SMS";
+      case ActiveChannel::MQTT: return "MQTT";
+      case ActiveChannel::HTTP: return "HTTP";
+      default:                  return "NONE";
+    }
   }
 
   void print() const;
 };
 
-// Global instance — defaults set by constructor, overwritten by StorageManager
+// Global instance — defaults from constructor, overwritten by StorageManager
 extern CommConfig commCfg;
 
 #endif // COMM_CONFIG_H
