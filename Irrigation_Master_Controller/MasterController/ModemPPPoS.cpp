@@ -1,8 +1,13 @@
 // ModemPPPoS.cpp - PPP over Serial data connectivity for Quectel EC200U
 // Renamed from PPPoSManager. Depends on ModemBase for hardware access.
+//
+// Config.h MUST be included first so ENABLE_PPPOS is defined before
+// ModemPPPoS.h evaluates its #if ENABLE_PPPOS guard.
+#include "Config.h"
 #include "ModemPPPoS.h"
 
-#if ENABLE_PPPOS
+#if ENABLE_PPPOS  // entire implementation compiled only when PPPoS is enabled
+
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"

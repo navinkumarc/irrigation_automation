@@ -1,8 +1,15 @@
 // ModemSMS.cpp - SMS communication for Quectel EC200U
 // Depends on ModemBase for AT command access.
 // Requests MODEM_MODE_SMS from modemBase before use.
+//
+// Config.h MUST be included first so ENABLE_SMS is defined before
+// ModemSMS.h evaluates its #if ENABLE_SMS guard.
+#include "Config.h"
 #include "ModemSMS.h"
 #include "ModemBase.h"
+
+#if ENABLE_SMS  // entire implementation compiled only when SMS is enabled
+
 
 ModemSMS modemSMS;
 
@@ -445,3 +452,5 @@ bool ModemSMS::sendNotificationToPhones(const String &message,
     if (phone.length() && sendSMS(phone, message)) sent = true;
   return sent;
 }
+
+#endif // ENABLE_SMS
