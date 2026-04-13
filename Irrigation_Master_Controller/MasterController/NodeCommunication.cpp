@@ -1,5 +1,6 @@
 // NodeCommunication.cpp - Handles all LoRa node communications
 #include "NodeCommunication.h"
+#include "MessageFormats.h"
 #include "MessageQueue.h"
 
 extern MessageQueue incomingQueue;
@@ -91,43 +92,34 @@ NodeMessage NodeCommunication::parseNodeMessage(const String &msg) {
   nodeMsg.moistureLevels = "";
   nodeMsg.reason = "";
 
-  if (msg.startsWith("STAT|")) {
+  if (msg.startsWith(MSG_STAT_PREFIX MSG_SEP)) {
     nodeMsg.type = NodeMessageType::TELEMETRY;
 
-    int nPos = msg.indexOf("N=");
-    if (nPos >= 0) {
-      int comma = msg.indexOf(',', nPos);
-      nodeMsg.nodeId = msg.substring(nPos + 2, comma > 0 ? comma : msg.length()).toInt();
-    }
+    // Use MsgFmt::extractField for all key=value parsing
+    String nStr = MsgFmt::extractField(msg, KEY_NODE_ID);
+    if (nStr.length()) nodeMsg.nodeId = nStr.toInt();
 
-    int battPos = msg.indexOf("BATT=");
-    if (battPos >= 0) {
-      int battEnd = msg.indexOf(',', battPos);
-      nodeMsg.batteryPercent = msg.substring(battPos + 5, battEnd > 0 ? battEnd : msg.length()).toInt();
-    }
+    String battStr = MsgFmt::extractField(msg, KEY_BATTERY);
+    if (battStr.length()) nodeMsg.batteryPercent = battStr.toInt();
 
-    int bvPos = msg.indexOf("BV=");
-    if (bvPos >= 0) {
-      int bvEnd = msg.indexOf(',', bvPos);
-      nodeMsg.batteryVoltage = msg.substring(bvPos + 3, bvEnd > 0 ? bvEnd : msg.length()).toFloat();
-    }
+    String bvStr = MsgFmt::extractField(msg, KEY_BATT_V);
+    if (bvStr.length()) nodeMsg.batteryVoltage = bvStr.toFloat();
 
-    int solPos = msg.indexOf("SOLV=");
-    if (solPos >= 0) {
-      int solEnd = msg.indexOf(',', solPos);
-      nodeMsg.solarVoltage = msg.substring(solPos + 5, solEnd > 0 ? solEnd : msg.length()).toFloat();
-    }
+    String solStr = MsgFmt::extractField(msg, KEY_SOLAR_V);
+    if (solStr.length()) nodeMsg.solarVoltage = solStr.toFloat();
 
-  } else if (msg.startsWith("AUTO_CLOSE|")) {
+    nodeMsg.valveStates    = MsgFmt::extractField(msg, KEY_VALVES);
+    nodeMsg.moistureLevels = MsgFmt::extractField(msg, KEY_MOISTURE);
+
+  } else if (msg.startsWith(MSG_AUTO_CLOSE_PREFIX MSG_SEP)) {
     nodeMsg.type = NodeMessageType::AUTO_CLOSE;
 
-    int nPos = msg.indexOf("N=");
-    if (nPos >= 0) {
-      int comma = msg.indexOf(',', nPos);
-      nodeMsg.nodeId = msg.substring(nPos + 2, comma > 0 ? comma : msg.length()).toInt();
-    }
+    String nStr = MsgFmt::extractField(msg, KEY_NODE_ID);
+    if (nStr.length()) nodeMsg.nodeId = nStr.toInt();
 
-    nodeMsg.reason = "Auto-close triggered";
+    String reason = MsgFmt::extractField(msg, KEY_REASON);
+    nodeMsg.reason = reason.length() ? reason : "Auto-close triggered";
+
   } else {
     nodeMsg.type = NodeMessageType::UNKNOWN;
   }
@@ -149,7 +141,7 @@ void NodeCommunication::processNodeMessages() {
   String msg;
 
   while (incomingQueue.dequeue(msg)) {
-    if (msg.startsWith("STAT|") || msg.startsWith("AUTO_CLOSE|")) {
+    if (msg.startsWith(MSG_STAT_PREFIX MSG_SEP) || msg.startsWith(MSG_AUTO_CLOSE_PREFIX MSG_SEP)) {
       Serial.println("[NodeComm] Processing node message: " + msg.substring(0, 40));
 
       NodeMessage nodeMsg = parseNodeMessage(msg);

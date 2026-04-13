@@ -31,6 +31,7 @@
 
 // ─── Comm-layer sub-modules (all internal to CommManager) ─────────────────────
 #include "CommConfig.h"
+#include "MessageFormats.h"
 #include "SerialConfigHandler.h"
 #include "IChannelAdapter.h"
 #include "ChannelAdapters.h"

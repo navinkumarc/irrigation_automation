@@ -1,6 +1,7 @@
 // UserCommunication.cpp - User ↔ Controller message exchange
 // No module headers. No #if ENABLE_X guards. Pure business logic.
 #include "UserCommunication.h"
+#include "MessageFormats.h"
 
 // ─── Constructor ──────────────────────────────────────────────────────────────
 UserCommunication::UserCommunication() : nodeCommandCallback(nullptr) {}
@@ -61,16 +62,16 @@ void UserCommunication::broadcastStatus(const SystemStatus &sys) {
 }
 
 // ─── Application event hooks ──────────────────────────────────────────────────
-void UserCommunication::onScheduleStarted  (const String &id) { sendAlert("Schedule '" + id + "' started",    "INFO");    }
-void UserCommunication::onScheduleCompleted(const String &id) { sendAlert("Schedule '" + id + "' completed",  "INFO");    }
+void UserCommunication::onScheduleStarted  (const String &id) { sendAlert(MsgFmt::alertScheduleStarted(id),    SEV_INFO);    }
+void UserCommunication::onScheduleCompleted(const String &id) { sendAlert(MsgFmt::alertScheduleCompleted(id),  SEV_INFO);    }
 void UserCommunication::onScheduleFailed   (const String &id, const String &reason) {
-  sendAlert("Schedule '" + id + "' failed: " + reason, "ERROR");
+  sendAlert(MsgFmt::alertScheduleFailed(id, reason),      SEV_ERROR);
 }
 void UserCommunication::onValveAction(int nodeId, const String &valve, const String &action) {
-  sendAlert("Node " + String(nodeId) + ": " + valve + " " + action, "INFO");
+  sendAlert("[" SEV_INFO "] Node " + String(nodeId) + ": " + valve + " " + action, SEV_INFO);
 }
-void UserCommunication::onSystemError  (const String &msg) { sendAlert("ERROR: "   + msg, "ERROR");   }
-void UserCommunication::onSystemWarning(const String &msg) { sendAlert("WARNING: " + msg, "WARNING"); }
+void UserCommunication::onSystemError  (const String &msg) { sendAlert(MsgFmt::alertError(msg),   SEV_ERROR);   }
+void UserCommunication::onSystemWarning(const String &msg) { sendAlert(MsgFmt::alertWarning(msg), SEV_WARNING); }
 
 // ─── broadcast() ─────────────────────────────────────────────────────────────
 void UserCommunication::broadcast(const String &message) {

@@ -1,5 +1,6 @@
 // LoRaComm.cpp - FINAL WORKING VERSION
 #include "LoRaComm.h"
+#include "MessageFormats.h"
 
 // Static member initialization
 char LoRaComm::txBuffer[LORA_BUFFER_SIZE];
@@ -104,7 +105,7 @@ void LoRaComm::sendRaw(const String &cmd) {
 bool LoRaComm::parseAck(const char* msg, uint32_t wantMid, const String &wantType,
                         int wantNode, const String &wantSched, int wantSeqIndex) {
   
-  if (strncmp(msg, "ACK|", 4) != 0) return false;
+  if (strncmp(msg, MSG_ACK_PREFIX MSG_SEP, 4) != 0) return false;
   
   const char* pipe1 = strchr(msg + 4, '|');
   if (!pipe1) return false;
@@ -199,7 +200,7 @@ bool LoRaComm::waitForAck(int node, const String &type, const String &sched,
         Serial.println("[LoRa] Not matching ACK");
         
         // Queue non-ACK messages
-        if (strlen(rxBufferSafe) > 0 && strncmp(rxBufferSafe, "ACK|", 4) != 0) {
+        if (strlen(rxBufferSafe) > 0 && strncmp(rxBufferSafe, MSG_ACK_PREFIX MSG_SEP, 4) != 0) {
           String msg = String(rxBufferSafe);
           if (msg.indexOf("SRC=") < 0) msg += ",SRC=LORA";
           incomingQueue.enqueue(msg);
@@ -230,15 +231,8 @@ bool LoRaComm::sendWithAck(const String &cmdType, int node, const String &schedI
   
   uint32_t mid = getNextMsgId();
   
-  String cmd = String("CMD|MID=") + String(mid) + 
-               String("|") + cmdType + 
-               String("|N=") + String(node) + 
-               String(",S=") + schedId + 
-               String(",I=") + String(seqIndex);
-  
-  if (cmdType == "OPEN" && durationMs > 0) {
-    cmd += String(",T=") + String(durationMs);
-  }
+  // Use MsgFmt for consistent wire format (see MessageFormats.h)
+  String cmd = MsgFmt::buildNodeCmd(mid, cmdType, node, schedId, seqIndex, durationMs);
   
   if (cmd.length() >= LORA_BUFFER_SIZE) {
     Serial.println("[LoRa] ❌ Command too long!");
@@ -283,7 +277,7 @@ void LoRaComm::processIncoming() {
     Serial.printf("[LoRa] ✓ RX: %s (RSSI=%d, SNR=%d)\n", rxBufferSafe, rssi, snr);
     
     // Skip ACKs (handled in waitForAck)
-    if (strncmp(rxBufferSafe, "ACK|", 4) == 0) {
+    if (strncmp(rxBufferSafe, MSG_ACK_PREFIX MSG_SEP, 4) == 0) {
       Serial.println("[LoRa] ACK (handled in waitForAck)");
       return;
     }
@@ -291,7 +285,7 @@ void LoRaComm::processIncoming() {
     String payload = String(rxBufferSafe);
     
     // Accept STAT messages
-    if (payload.startsWith("STAT|")) {
+    if (payload.startsWith(MSG_STAT_PREFIX MSG_SEP)) {
       Serial.println("[LoRa] ✓ STAT message - QUEUING!");
       if (payload.indexOf("SRC=") < 0) payload += ",SRC=LORA";
       incomingQueue.enqueue(payload);
@@ -300,7 +294,7 @@ void LoRaComm::processIncoming() {
     }
     
     // Accept AUTO_CLOSE
-    if (payload.startsWith("AUTO_CLOSE|")) {
+    if (payload.startsWith(MSG_AUTO_CLOSE_PREFIX MSG_SEP)) {
       Serial.println("[LoRa] ✓ AUTO_CLOSE - QUEUING!");
       if (payload.indexOf("SRC=") < 0) payload += ",SRC=LORA";
       incomingQueue.enqueue(payload);

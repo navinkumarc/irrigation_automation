@@ -5,6 +5,7 @@
 // All communication concerns live here. MasterController.ino calls only the
 // public API: begin(), process(), notify*(), getStatus().
 #include "CommManager.h"
+#include "NodeCommunication.h"
 
 // commMgr global instance is defined in MasterController.ino
 // CommManager.h provides: extern CommManager commMgr;
@@ -158,6 +159,26 @@ bool CommManager::initNodeCommunication() {
   initStatus.totalModules++;
 #if ENABLE_LORA
   if (!nodeComm.init(&loraComm)) { printStepFailure("NodeCommunication"); return false; }
+
+  // Node message callback: format via MsgFmt and forward to UserCommunication.
+  nodeComm.setMessageCallback([this](const NodeMessage &nm) {
+    String alert;
+    switch (nm.type) {
+      case NodeMessageType::TELEMETRY:
+        alert = MsgFmt::alertNodeTelemetry(
+          nm.nodeId, nm.batteryPercent, nm.batteryVoltage,
+          nm.solarVoltage, nm.valveStates);
+        break;
+      case NodeMessageType::AUTO_CLOSE:
+        alert = MsgFmt::alertAutoClose(nm.nodeId, nm.reason);
+        break;
+      default:
+        alert = MsgFmt::alertWarning("Unknown node message from node " + String(nm.nodeId));
+        break;
+    }
+    Serial.println("[CommMgr] Node event: " + alert);
+    userComm.sendAlert(alert, SEV_INFO);
+  });
 #else
   Serial.println("[CommMgr]   LoRa disabled — node communication limited");
 #endif
@@ -293,7 +314,7 @@ void CommManager::process() {
   String raw;
   while (incomingQueue.dequeue(raw)) {
     Serial.println("[CommMgr] Queue: " + raw);
-    // Further routing can be added here (e.g. STAT| → telemetry handler)
+    // Non-node queue messages (node msgs use MSG_STAT_PREFIX / MSG_AUTO_CLOSE_PREFIX)
   }
 }
 
