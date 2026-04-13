@@ -3,7 +3,7 @@
 // Channel model
 // ─────────────
 //   SMS        modem AT mode
-//   Data/MQTT  MQTT over data bearer (WiFi or PPPoS)
+//   Internet  MQTT over data bearer (WiFi or PPPoS)
 //   Bluetooth  BLE notify / write
 //   LoRa       user broadcast
 //   Serial     always-on config/debug console
@@ -60,10 +60,10 @@ public:
                                const String &alertTopic = MQTT_TOPIC_ALERTS)
     : _mqtt(mqtt), _alertTopic(alertTopic) {}
 
-  const char* channelName() const override { return "Data/MQTT"; }
+  const char* channelName() const override { return "Internet"; }
 
   bool isAvailable() const override {
-    return commCfg.chData && _mqtt.isConnected();
+    return commCfg.chInternet && _mqtt.isConnected();
   }
 
   bool send(const String &message) override {

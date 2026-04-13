@@ -460,7 +460,7 @@ SystemStatus CommManager::buildSystemStatus() const {
 #endif
 #if ENABLE_MQTT
   s.mqttConnected = initStatus.mqttOk && mqtt.isConnected();
-  s.dataConnected = s.mqttConnected;   // Data channel = MQTT reachable
+  s.internetConnected = s.mqttConnected;   // Internet channel = MQTT reachable
 #endif
 #if ENABLE_BLE
   s.bleConnected = initStatus.bleOk && bleComm.isConnected();
@@ -469,7 +469,7 @@ SystemStatus CommManager::buildSystemStatus() const {
   s.loraUp = initStatus.loraOk;
 #endif
 
-  // ── Data bearer detail ────────────────────────────────────────────────
+  // ── Internet bearer detail ───────────────────────────────────────────
 #if ENABLE_WIFI
   s.wifiUp = initStatus.wifiOk && wifiComm.isConnected();
   if (s.wifiUp && s.networkIP.length() == 0)

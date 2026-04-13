@@ -234,7 +234,7 @@ void StorageManager::loadCommConfig(CommConfig &cfg) {
 
   // Channel enables
   if (doc.containsKey("chSMS"))        cfg.chSMS             = doc["chSMS"].as<bool>();
-  if (doc.containsKey("chData"))       cfg.chData            = doc["chData"].as<bool>();
+  if (doc.containsKey("chInternet"))   cfg.chInternet        = doc["chInternet"].as<bool>();
   if (doc.containsKey("chBluetooth"))  cfg.chBluetooth       = doc["chBluetooth"].as<bool>();
   if (doc.containsKey("chLoRa"))       cfg.chLoRa            = doc["chLoRa"].as<bool>();
 
@@ -276,7 +276,7 @@ void StorageManager::saveCommConfig(const CommConfig &cfg) {
   DynamicJsonDocument doc(2048);
 
   doc["chSMS"]        = cfg.chSMS;
-  doc["chData"]       = cfg.chData;
+  doc["chInternet"]   = cfg.chInternet;
   doc["chBluetooth"]  = cfg.chBluetooth;
   doc["chLoRa"]       = cfg.chLoRa;
   doc["bearer"]       = cfg.dataBearerPrimary;

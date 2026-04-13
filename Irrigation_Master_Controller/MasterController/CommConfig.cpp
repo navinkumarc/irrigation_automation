@@ -11,7 +11,7 @@ void CommConfig::print() const {
   Serial.println(F("\n=== COMMUNICATION CONFIGURATION ==="));
   Serial.println(F("-- User Channels --"));
   Serial.printf("  SMS       : %s\n", chSMS       ? "ENABLED" : "DISABLED");
-  Serial.printf("  Data/MQTT : %s\n", chData      ? "ENABLED" : "DISABLED");
+  Serial.printf("  Internet  : %s\n", chInternet  ? "ENABLED" : "DISABLED");
   Serial.printf("  Bluetooth : %s\n", chBluetooth ? "ENABLED" : "DISABLED");
   Serial.printf("  LoRa      : %s\n", chLoRa      ? "ENABLED" : "DISABLED");
   Serial.println(F("  Serial    : ALWAYS ON (config console)"));

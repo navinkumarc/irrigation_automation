@@ -14,7 +14,7 @@
 //  SAVE CONFIG                     Persist to LittleFS
 //  RESET CONFIG                    Restore firmware defaults
 // ───────────────────────────────────────────────────────
-//  ENABLE  SMS | DATA | BLE | LORA
+//  ENABLE  SMS | INTERNET | BLE | LORA
 //  DISABLE SMS | DATA | BLE | LORA
 //  (Serial cannot be disabled)
 // ───────────────────────────────────────────────────────

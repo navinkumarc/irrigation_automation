@@ -32,11 +32,11 @@ bool SerialConfigHandler::handleEnable(const String &up, const String &) {
   String ch = up.substring(7); ch.trim();
 
   if      (ch == "SMS")                       { commCfg.chSMS       = true; Serial.println("[Config] SMS channel ENABLED"); }
-  else if (ch == "DATA" || ch == "MQTT")      { commCfg.chData      = true; Serial.println("[Config] Data/MQTT channel ENABLED"); }
+  else if (ch == "INTERNET" || ch == "MQTT")  { commCfg.chInternet  = true; Serial.println("[Config] Internet channel ENABLED"); }
   else if (ch == "BLE"  || ch == "BLUETOOTH") { commCfg.chBluetooth = true; Serial.println("[Config] Bluetooth channel ENABLED"); }
   else if (ch == "LORA")                      { commCfg.chLoRa      = true; Serial.println("[Config] LoRa channel ENABLED"); }
   else if (ch == "SERIAL")                    { Serial.println("[Config] Serial is always ON — cannot be disabled"); return true; }
-  else { Serial.println("[Config] Unknown channel: " + ch + "  (SMS | DATA | BLE | LORA)"); return true; }
+  else { Serial.println("[Config] Unknown channel: " + ch + "  (SMS | INTERNET | BLE | LORA)"); return true; }
 
   Serial.println("[Config] Run SAVE CONFIG to persist. Reboot to apply.");
   return true;
@@ -46,11 +46,11 @@ bool SerialConfigHandler::handleDisable(const String &up, const String &) {
   String ch = up.substring(8); ch.trim();
 
   if      (ch == "SMS")                       { commCfg.chSMS       = false; Serial.println("[Config] SMS channel DISABLED"); }
-  else if (ch == "DATA" || ch == "MQTT")      { commCfg.chData      = false; Serial.println("[Config] Data/MQTT channel DISABLED"); }
+  else if (ch == "INTERNET" || ch == "MQTT")  { commCfg.chInternet  = false; Serial.println("[Config] Internet channel DISABLED"); }
   else if (ch == "BLE"  || ch == "BLUETOOTH") { commCfg.chBluetooth = false; Serial.println("[Config] Bluetooth channel DISABLED"); }
   else if (ch == "LORA")                      { commCfg.chLoRa      = false; Serial.println("[Config] LoRa channel DISABLED"); }
   else if (ch == "SERIAL")                    { Serial.println("[Config] Serial cannot be disabled — it is the config console"); return true; }
-  else { Serial.println("[Config] Unknown channel: " + ch + "  (SMS | DATA | BLE | LORA)"); return true; }
+  else { Serial.println("[Config] Unknown channel: " + ch + "  (SMS | INTERNET | BLE | LORA)"); return true; }
 
   Serial.println("[Config] Run SAVE CONFIG to persist. Reboot to apply.");
   return true;
@@ -111,11 +111,11 @@ void SerialConfigHandler::printHelp() const {
     "SAVE CONFIG               Save to LittleFS flash\n"
     "RESET CONFIG              Restore firmware defaults\n"
     "\n"
-    "ENABLE  SMS|DATA|BLE|LORA Enable a user channel\n"
-    "DISABLE SMS|DATA|BLE|LORA Disable a user channel\n"
+    "ENABLE  SMS|INTERNET|BLE|LORA  Enable a user channel\n"
+    "DISABLE SMS|INTERNET|BLE|LORA  Disable a user channel\n"
     "(Serial is always on and cannot be disabled)\n"
     "\n"
-    "SET BEARER    WIFI|PPPOS  Data bearer for MQTT/HTTP\n"
+    "SET BEARER    WIFI|PPPOS  Internet bearer for MQTT/HTTP\n"
     "SET WIFI_SSID <ssid>      WiFi network name\n"
     "SET WIFI_PASS <pass>      WiFi password\n"
     "SET APN       <apn>       Cellular APN\n"

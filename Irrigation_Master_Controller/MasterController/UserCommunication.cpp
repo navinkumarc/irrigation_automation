@@ -179,7 +179,7 @@ String UserCommunication::formatStatusBrief(const SystemStatus &sys) const {
   String s = "[Status] ";
   s += "Sched:"     + String(sys.scheduleRunning ? "RUN" : "IDLE") + " ";
   s += "SMS:"       + String(sys.smsReady       ? "OK" : "--") + " ";
-  s += "Data/MQTT:" + String(sys.dataConnected  ? "OK" : "--")
+  s += "Internet:" + String(sys.internetConnected ? "OK" : "--")
      + "[" + sys.bearerName + "] ";
   s += "BT:"        + String(sys.bleConnected   ? "OK" : "--") + " ";
   s += "LoRa:"      + String(sys.loraUp         ? "OK" : "--") + " ";
@@ -192,15 +192,20 @@ String UserCommunication::formatStatusText(const SystemStatus &sys) const {
   t += "SCHEDULE:\n";
   t += "  Running:  " + String(sys.scheduleRunning ? "YES (" + sys.currentScheduleId + ")" : "NO") + "\n";
   t += "  Schedules:" + String(sys.enabledSchedules) + "/" + String(sys.totalSchedules) + " enabled\n";
-  t += "CHANNELS:\n";
-  t += "  SMS:   " + String(sys.smsReady       ? "✓ Ready"     : "✗ Off") + "\n";
-  t += "  MQTT:  " + String(sys.mqttConnected  ? "✓ Connected" : "✗ Off") + "\n";
-  t += "  BLE:   " + String(sys.bleConnected   ? "✓ Connected" : "✗ Off") + "\n";
-  t += "  LoRa:  " + String(sys.loraUp         ? "✓ Active"    : "✗ Off") + "\n";
-  t += "NETWORK:\n";
-  t += "  WiFi:  " + String(sys.wifiUp  ? "Up"   : "Down") + "\n";
-  t += "  PPPoS: " + String(sys.ppposUp ? "Up"   : "Down") + "\n";
+  t += "USER CHANNELS:\n";
+  t += "  SMS:       " + String(sys.smsReady          ? "OK (AT mode)"   : "Off") + "\n";
+  t += "  Internet:  " + String(sys.internetConnected ? "OK"             : "Off")
+     + " [bearer: " + sys.bearerName + "]\n";
+  t += "  Bluetooth: " + String(sys.bleConnected      ? "OK (connected)" : "Off/no client") + "\n";
+  t += "  LoRa:      " + String(sys.loraUp            ? "OK"             : "Off") + "\n";
+  t += "  Serial:    always ON\n";
+  t += "INTERNET BEARER:\n";
+  t += "  WiFi:  " + String(sys.wifiUp  ? "Up" : "Down") + "\n";
+  t += "  PPPoS: " + String(sys.ppposUp ? "Up" : "Down") + "\n";
   t += "  IP:    " + (sys.networkIP.length() ? sys.networkIP : "N/A") + "\n";
+  t += "SERVICES:\n";
+  t += "  MQTT:  " + String(sys.mqttConnected ? "Connected" : "Off") + "\n";
+  t += "  HTTP:  " + String(sys.httpReady     ? "Listening" : "Off") + "\n";
   t += "SYSTEM:\n";
   t += "  Uptime:  " + String(sys.uptimeSeconds) + "s\n";
   t += "  Heap:    " + String(sys.freeHeapBytes / 1024) + "KB free\n";
@@ -215,13 +220,17 @@ String UserCommunication::formatStatusJSON(const SystemStatus &sys) const {
   j += "  \"schedule\": {\"running\":" + String(sys.scheduleRunning ? "true" : "false")
      + ",\"enabled\":" + String(sys.enabledSchedules)
      + ",\"total\":"   + String(sys.totalSchedules) + "},\n";
-  j += "  \"channels\": {\"sms\":"  + String(sys.smsReady      ? "true" : "false")
-     + ",\"mqtt\":"  + String(sys.mqttConnected  ? "true" : "false")
-     + ",\"ble\":"   + String(sys.bleConnected   ? "true" : "false")
-     + ",\"lora\":"  + String(sys.loraUp         ? "true" : "false") + "},\n";
-  j += "  \"bearer\": {\"wifi\":" + String(sys.wifiUp  ? "true" : "false")
+  j += "  \"channels\": {\"sms\":" + String(sys.smsReady           ? "true" : "false")
+     + ",\"internet\":" + String(sys.internetConnected ? "true" : "false")
+     + ",\"ble\":" + String(sys.bleConnected         ? "true" : "false")
+     + ",\"lora\":" + String(sys.loraUp              ? "true" : "false")
+     + ",\"serial\":true},\n";
+  j += "  \"bearer\": {\"name\":\"" + sys.bearerName + "\","
+     + "\"wifi\":" + String(sys.wifiUp  ? "true" : "false")
      + ",\"pppos\":" + String(sys.ppposUp ? "true" : "false")
-     + ",\"ip\":\""  + sys.networkIP + "\"},\n";
+     + ",\"ip\":\"" + sys.networkIP + "\"},\n";
+  j += "  \"services\": {\"mqtt\":" + String(sys.mqttConnected ? "true" : "false")
+     + ",\"http\":" + String(sys.httpReady ? "true" : "false") + "},\n";
   j += "  \"system\": {\"uptimeSec\":" + String(sys.uptimeSeconds)
      + ",\"freeHeap\":"  + String(sys.freeHeapBytes)
      + ",\"heapUsePct\":" + String(heapPct) + "}\n";

@@ -61,7 +61,7 @@ struct SystemStatus {
 
   // ── User channels ─────────────────────────────────────────────────────────
   bool     smsReady           = false;   // SMS channel (modem AT mode)
-  bool     dataConnected      = false;   // Data channel (MQTT broker reachable)
+  bool     internetConnected  = false;   // Internet channel (MQTT broker reachable)
   bool     bleConnected       = false;   // Bluetooth channel
   bool     loraUp             = false;   // LoRa channel
 

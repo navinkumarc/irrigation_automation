@@ -5,7 +5,7 @@
 //
 // Channel model:
 //   SMS        modem AT mode
-//   Data/MQTT  MQTT over data bearer (WiFi or PPPoS)
+//   Internet  MQTT over data bearer (WiFi or PPPoS)
 //   Bluetooth  BLE notify/write
 //   LoRa       user broadcast
 //   Serial     always-on config console (cannot be disabled)
@@ -32,7 +32,7 @@ struct CommConfig {
 
   // ── User channel enables ──────────────────────────────────────────────────
   bool chSMS;          // SMS channel
-  bool chData;         // Data/MQTT channel
+  bool chInternet;     // Internet channel (MQTT over WiFi/PPPoS)
   bool chBluetooth;    // Bluetooth channel
   bool chLoRa;         // LoRa channel
   // Serial is always enabled — no flag needed
@@ -71,7 +71,7 @@ struct CommConfig {
   // ── Constructor: populate from Config.h compile-time defaults ─────────────
   CommConfig() {
     chSMS             = (ENABLE_SMS            == 1);
-    chData            = (ENABLE_MQTT           == 1);
+    chInternet        = (ENABLE_MQTT           == 1);
     chBluetooth       = (ENABLE_BLE            == 1);
     chLoRa            = (ENABLE_LORA_USER_COMM == 1);
     dataBearerPrimary = DATA_BEARER_WIFI;
