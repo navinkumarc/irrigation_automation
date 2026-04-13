@@ -14,6 +14,9 @@ String LoRaComm::lastRxMessage = "";
 
 static RadioEvents_t RadioEvents;
 
+// Global singleton instance — extern declared in LoRaComm.h and Config.h
+LoRaComm loraComm;
+
 LoRaComm::LoRaComm() {}
 
 // ========== Interrupt Handlers ==========

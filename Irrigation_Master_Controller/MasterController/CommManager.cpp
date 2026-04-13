@@ -3,8 +3,8 @@
 // public API: begin(), process(), notify*(), getStatus().
 #include "CommManager.h"
 
-// ─── Global instance ──────────────────────────────────────────────────────────
-CommManager commMgr;
+// commMgr global instance is defined in MasterController.ino
+// CommManager.h provides: extern CommManager commMgr;
 
 // ─── Constructor ──────────────────────────────────────────────────────────────
 CommManager::CommManager() {}

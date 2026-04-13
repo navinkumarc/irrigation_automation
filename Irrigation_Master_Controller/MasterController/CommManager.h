@@ -124,8 +124,8 @@ private:
   UserCommunication userComm;
   NetworkRouter     networkRouter;
 
-  // MessageQueue lives here — not visible to MasterController
-  MessageQueue incomingQueue;
+  // incomingQueue is a global defined in MessageQueue.cpp
+  // (BLEComm.cpp and NodeCommunication.cpp reference it by extern)
 
   // ── Channel adapters (owned, registered into userComm) ─────────────────────
 #if ENABLE_SMS

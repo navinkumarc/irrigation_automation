@@ -5,6 +5,9 @@
 // Static instance pointer for event handler
 static MQTTComm *mqttInstance = nullptr;
 
+// Global singleton instance
+MQTTComm mqtt;
+
 MQTTComm::MQTTComm()
   : mqttClient(nullptr),
     configured(false),

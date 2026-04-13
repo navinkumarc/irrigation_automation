@@ -1,6 +1,10 @@
 // MessageQueue.cpp
 #include "MessageQueue.h"
 
+// Global singleton instance — extern declared in MessageQueue.h
+MessageQueue incomingQueue;
+
+
 MessageQueue::MessageQueue() : head(0), tail(0) {}
 
 bool MessageQueue::enqueue(const String &msg) {

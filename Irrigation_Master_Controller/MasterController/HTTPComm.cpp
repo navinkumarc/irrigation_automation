@@ -1,6 +1,9 @@
 // HTTPComm.cpp - HTTP API communication
 #include "HTTPComm.h"
 
+// Global singleton instance — extern declared in HTTPComm.h
+HTTPComm httpComm;
+
 HTTPComm::HTTPComm() : server(nullptr), initialized(false) {}
 
 HTTPComm::~HTTPComm() {

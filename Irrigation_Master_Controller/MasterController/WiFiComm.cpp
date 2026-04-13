@@ -1,6 +1,9 @@
 // WiFiComm.cpp - WiFi connectivity management module
 #include "WiFiComm.h"
 
+// Global singleton instance — extern declared in WiFiComm.h
+WiFiComm wifiComm;
+
 WiFiComm::WiFiComm() : initialized(false), connected(false), lastConnectionAttempt(0),
                        lastStatusCheck(0), reconnectAttempts(0) {
 }

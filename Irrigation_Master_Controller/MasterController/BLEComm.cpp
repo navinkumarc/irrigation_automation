@@ -92,6 +92,9 @@ class MyCharacteristicCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
+// Global singleton instance — extern declared in BLEComm.h
+BLEComm bleComm;
+
 BLEComm::BLEComm() : server(nullptr), txChar(nullptr), rxChar(nullptr), connected(false), commandCallback(nullptr) {}
 
 bool BLEComm::init() {
