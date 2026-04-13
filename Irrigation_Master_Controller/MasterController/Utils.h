@@ -9,7 +9,8 @@
 #include "Config.h"
 
 // ========== Extern References ==========
-extern Preferences prefs;
+extern Preferences  prefs;
+extern SystemConfig sysConfig;  // FIX: was missing, used in adminPhoneList() etc.
 
 // ========== Phone Number Utilities ==========
 String normalizePhone(const String &in);

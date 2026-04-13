@@ -1,4 +1,7 @@
 // ModemComm.h
+// NOTE: ModemComm is a legacy class kept for reference only.
+// For SMS use ModemSMS. For PPPoS data use PPPoSManager.
+// Do not instantiate ModemComm directly — it is not fully implemented.
 #ifndef MODEM_COMM_H
 #define MODEM_COMM_H
 
@@ -10,37 +13,21 @@
 
 class ModemComm {
 private:
-  HardwareSerial *serial;
-  String lineBuffer;
-  unsigned long lastActivity;
-  unsigned long lastMqttURC;
-  bool mqttReady;
-  
-  // Add these missing member variables:
   bool mqttConnected;
   bool modemReady;
-  
-  // Change sendAT to sendCommand to match implementation:
+
   String sendCommand(const String &cmd, uint32_t timeout = 2000);
-  
-  bool waitForPrompt(char ch, unsigned long timeout = 5000);
-  String readSMSByIndex(int index, String &sender);
-  bool isModemReadyForSMS();
 
 public:
   ModemComm();
   bool init();
   bool configureMQTT();
-  
-  // Change parameter type from const char* to const String& to match implementation:
   bool publish(const String &topic, const String &payload);
-  
-  bool sendSMS(const String &num, const String &text);
-  bool ntpSync();
   void processBackground();
   bool isMQTTReady();
 };
 
-extern ModemComm modemComm;
+// No global instance — ModemComm is not used in the current architecture.
+// Use modemBase (ModemBase) + modemSMS (ModemSMS) instead.
 
 #endif

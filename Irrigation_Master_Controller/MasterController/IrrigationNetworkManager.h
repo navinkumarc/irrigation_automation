@@ -6,7 +6,7 @@
 #include <Arduino.h>
 #include "Config.h"
 
-// Forward declarations
+// Forward declarations — actual headers included only when flags are set
 class PPPoSManager;
 class WiFiComm;
 
@@ -25,13 +25,13 @@ enum class NetworkState {
 
 class IrrigationNetworkManager {
 private:
-  PPPoSManager* ppposManager;
-  WiFiComm* wifiComm;
+  PPPoSManager*   ppposManager;
+  WiFiComm*       wifiComm;
   HardwareSerial* modemSerial;
 
   ConnectionType activeConnection;
-  NetworkState state;
-  String localIP;
+  NetworkState   state;
+  String         localIP;
 
   unsigned long lastConnectionAttempt;
   unsigned long reconnectInterval;
@@ -42,20 +42,21 @@ private:
 public:
   IrrigationNetworkManager();
 
-  // Initialize with PPPoS and WiFi managers
+  // Initialize with PPPoS and WiFi managers (either may be nullptr if disabled)
   void init(PPPoSManager* pppos, WiFiComm* wifi, HardwareSerial* serial);
 
   // Connect with automatic fallback (PPPoS first, then WiFi)
-  bool connect(uint32_t pppos_timeout_ms = 30000, uint32_t wifi_timeout_ms = 15000);
+  bool connect(uint32_t pppos_timeout_ms = PPPOS_CONNECT_TIMEOUT_MS,
+               uint32_t wifi_timeout_ms  = WIFI_CONNECT_TIMEOUT_MS);
 
   // Connection status
-  bool isConnected();
+  bool           isConnected();
   ConnectionType getConnectionType();
-  String getLocalIP();
-  NetworkState getState();
+  String         getLocalIP();
+  NetworkState   getState();
 
   // Reconnection management
-  void processBackground();  // Handles reconnection attempts
+  void processBackground();
 
   // Manual control
   bool disconnect();

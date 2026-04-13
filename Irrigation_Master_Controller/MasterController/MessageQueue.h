@@ -15,10 +15,10 @@ public:
   MessageQueue();
   bool enqueue(const String &msg);
   bool dequeue(String &msg);
-  int size();
+  int  size();
   bool isEmpty();
-  bool isFull();
-  void clear();
+  bool isFull();   // Returns true when queue cannot accept more messages
+  void clear();    // Discards all messages
 };
 
 // Global instance

@@ -1,9 +1,14 @@
 // IrrigationNetworkManager.cpp - Unified network connection manager with automatic fallback
 // Renamed to avoid conflict with ESP32's NetworkManager class
 #include "IrrigationNetworkManager.h"
-#include "PPPoSManager.h"
-#include "WiFiComm.h"
-#include <WiFi.h>
+
+#if ENABLE_PPPOS
+  #include "PPPoSManager.h"
+#endif
+#if ENABLE_WIFI
+  #include "WiFiComm.h"
+  #include <WiFi.h>
+#endif
 
 IrrigationNetworkManager::IrrigationNetworkManager()
   : ppposManager(nullptr),
@@ -13,15 +18,15 @@ IrrigationNetworkManager::IrrigationNetworkManager()
     state(NetworkState::DISCONNECTED),
     localIP(""),
     lastConnectionAttempt(0),
-    reconnectInterval(60000) {  // Default 60 second reconnect interval
+    reconnectInterval(60000) {
 }
 
 void IrrigationNetworkManager::init(PPPoSManager* pppos, WiFiComm* wifi, HardwareSerial* serial) {
   Serial.println("[NetMgr] Initializing Network Manager...");
 
   ppposManager = pppos;
-  wifiComm = wifi;
-  modemSerial = serial;
+  wifiComm     = wifi;
+  modemSerial  = serial;
 
   Serial.println("[NetMgr] ✓ Network Manager initialized");
   Serial.println("[NetMgr] Fallback order: PPPoS → WiFi");
@@ -35,53 +40,43 @@ bool IrrigationNetworkManager::connect(uint32_t pppos_timeout_ms, uint32_t wifi_
   lastConnectionAttempt = millis();
 
 #if ENABLE_PPPOS
-  // Try PPPoS first (cellular data via modem)
   if (ppposManager != nullptr) {
     Serial.println("[NetMgr] [1/2] Attempting PPPoS connection...");
     if (tryPPPoS(pppos_timeout_ms)) {
       activeConnection = ConnectionType::PPPOS;
-      state = NetworkState::CONNECTED;
-      localIP = ppposManager->getLocalIP();
+      state            = NetworkState::CONNECTED;
+      localIP          = ppposManager->getLocalIP();
 
-      // Disable WiFi to prevent auto-reconnect interference
-      #if ENABLE_WIFI
+#if ENABLE_WIFI
       Serial.println("[NetMgr] → Disabling WiFi (PPPoS active)");
       WiFi.disconnect(true);
       WiFi.mode(WIFI_OFF);
-      #endif
+#endif
 
       Serial.println("[NetMgr] ========================================");
       Serial.println("[NetMgr] ✓ NETWORK CONNECTED VIA PPPOS");
-      Serial.println("[NetMgr] ========================================");
-      Serial.println("[NetMgr] Connection Type: Cellular (PPP)");
       Serial.println("[NetMgr] IP Address: " + localIP);
       Serial.println("[NetMgr] ========================================");
-
       return true;
     }
 
-    Serial.println("[NetMgr] ❌ PPPoS connection failed");
-    Serial.println("[NetMgr] → Falling back to WiFi...");
+    Serial.println("[NetMgr] ❌ PPPoS connection failed → Falling back to WiFi...");
   }
 #endif
 
 #if ENABLE_WIFI
-  // Fallback to WiFi
   if (wifiComm != nullptr) {
     Serial.println("[NetMgr] [2/2] Attempting WiFi connection...");
     if (tryWiFi(wifi_timeout_ms)) {
       activeConnection = ConnectionType::WIFI;
-      state = NetworkState::CONNECTED;
-      localIP = wifiComm->getIPAddress();
+      state            = NetworkState::CONNECTED;
+      localIP          = wifiComm->getIPAddress();
 
       Serial.println("[NetMgr] ========================================");
       Serial.println("[NetMgr] ✓ NETWORK CONNECTED VIA WIFI");
-      Serial.println("[NetMgr] ========================================");
-      Serial.println("[NetMgr] Connection Type: WiFi");
       Serial.println("[NetMgr] SSID: " + String(WIFI_SSID));
       Serial.println("[NetMgr] IP Address: " + localIP);
       Serial.println("[NetMgr] ========================================");
-
       return true;
     }
 
@@ -91,17 +86,13 @@ bool IrrigationNetworkManager::connect(uint32_t pppos_timeout_ms, uint32_t wifi_
 
   // Both failed
   activeConnection = ConnectionType::NONE;
-  state = NetworkState::DISCONNECTED;
-  localIP = "";
+  state            = NetworkState::DISCONNECTED;
+  localIP          = "";
 
   Serial.println("[NetMgr] ========================================");
   Serial.println("[NetMgr] ❌ ALL NETWORK CONNECTIONS FAILED");
-  Serial.println("[NetMgr] ========================================");
-  Serial.println("[NetMgr] PPPoS: Failed");
-  Serial.println("[NetMgr] WiFi: Failed");
   Serial.println("[NetMgr] → Will retry in " + String(reconnectInterval / 1000) + " seconds");
   Serial.println("[NetMgr] ========================================");
-
   return false;
 }
 
@@ -120,13 +111,10 @@ bool IrrigationNetworkManager::tryPPPoS(uint32_t timeout_ms) {
     return false;
   }
 
-  Serial.println("[NetMgr] → Connecting to cellular network...");
-  Serial.println("[NetMgr] APN: " + String(PPPOS_APN));
-  Serial.println("[NetMgr] Timeout: " + String(timeout_ms / 1000) + " seconds");
+  Serial.println("[NetMgr] → Connecting to cellular network (APN: " + String(PPPOS_APN) + ")...");
 
   if (ppposManager->connect(timeout_ms)) {
-    Serial.println("[NetMgr] ✓ PPPoS connected!");
-    Serial.println("[NetMgr] ✓ IP: " + ppposManager->getLocalIP());
+    Serial.println("[NetMgr] ✓ PPPoS connected, IP: " + ppposManager->getLocalIP());
     return true;
   }
 
@@ -147,14 +135,10 @@ bool IrrigationNetworkManager::tryWiFi(uint32_t timeout_ms) {
 
   state = NetworkState::CONNECTING_WIFI;
 
-  Serial.println("[NetMgr] → Connecting to WiFi network...");
-  Serial.println("[NetMgr] SSID: " + String(WIFI_SSID));
-  Serial.println("[NetMgr] Timeout: " + String(timeout_ms / 1000) + " seconds");
+  Serial.println("[NetMgr] → Connecting to WiFi (SSID: " + String(WIFI_SSID) + ")...");
 
-  // WiFiComm::init() handles connection internally
   if (wifiComm->init(WIFI_SSID, WIFI_PASS)) {
-    Serial.println("[NetMgr] ✓ WiFi connected!");
-    Serial.println("[NetMgr] ✓ IP: " + wifiComm->getIPAddress());
+    Serial.println("[NetMgr] ✓ WiFi connected, IP: " + wifiComm->getIPAddress());
     return true;
   }
 
@@ -167,20 +151,18 @@ bool IrrigationNetworkManager::tryWiFi(uint32_t timeout_ms) {
 }
 
 bool IrrigationNetworkManager::isConnected() {
-  // Check active connection status
   switch (activeConnection) {
     case ConnectionType::PPPOS:
 #if ENABLE_PPPOS
       if (ppposManager != nullptr) {
-        bool connected = ppposManager->isConnected();
-        if (!connected) {
-          // Connection was lost
+        bool ok = ppposManager->isConnected();
+        if (!ok) {
           Serial.println("[NetMgr] ⚠ PPPoS connection lost");
           state = NetworkState::DISCONNECTED;
           activeConnection = ConnectionType::NONE;
           localIP = "";
         }
-        return connected;
+        return ok;
       }
 #endif
       return false;
@@ -188,15 +170,14 @@ bool IrrigationNetworkManager::isConnected() {
     case ConnectionType::WIFI:
 #if ENABLE_WIFI
       if (wifiComm != nullptr) {
-        bool connected = wifiComm->isConnected();
-        if (!connected) {
-          // Connection was lost
+        bool ok = wifiComm->isConnected();
+        if (!ok) {
           Serial.println("[NetMgr] ⚠ WiFi connection lost");
           state = NetworkState::DISCONNECTED;
           activeConnection = ConnectionType::NONE;
           localIP = "";
         }
-        return connected;
+        return ok;
       }
 #endif
       return false;
@@ -207,20 +188,11 @@ bool IrrigationNetworkManager::isConnected() {
   }
 }
 
-ConnectionType IrrigationNetworkManager::getConnectionType() {
-  return activeConnection;
-}
-
-String IrrigationNetworkManager::getLocalIP() {
-  return localIP;
-}
-
-NetworkState IrrigationNetworkManager::getState() {
-  return state;
-}
+ConnectionType IrrigationNetworkManager::getConnectionType() { return activeConnection; }
+String         IrrigationNetworkManager::getLocalIP()        { return localIP; }
+NetworkState   IrrigationNetworkManager::getState()          { return state; }
 
 void IrrigationNetworkManager::processBackground() {
-  // If disconnected and enough time has passed, attempt reconnection
   if (!isConnected() && state == NetworkState::DISCONNECTED) {
     if (millis() - lastConnectionAttempt >= reconnectInterval) {
       Serial.println("[NetMgr] → Attempting automatic reconnection...");
@@ -229,7 +201,6 @@ void IrrigationNetworkManager::processBackground() {
   }
 
 #if ENABLE_PPPOS
-  // If connected via PPPoS, must call loop() to feed data to PPP stack
   if (activeConnection == ConnectionType::PPPOS && ppposManager != nullptr) {
     ppposManager->loop();
   }
@@ -238,7 +209,6 @@ void IrrigationNetworkManager::processBackground() {
 
 bool IrrigationNetworkManager::disconnect() {
   Serial.println("[NetMgr] Disconnecting network...");
-
   bool success = false;
 
   switch (activeConnection) {
@@ -262,19 +232,18 @@ bool IrrigationNetworkManager::disconnect() {
       break;
 
     case ConnectionType::NONE:
-      Serial.println("[NetMgr] No active connection to disconnect");
+      Serial.println("[NetMgr] No active connection");
       success = true;
       break;
   }
 
   activeConnection = ConnectionType::NONE;
-  state = NetworkState::DISCONNECTED;
+  state  = NetworkState::DISCONNECTED;
   localIP = "";
-
   return success;
 }
 
 void IrrigationNetworkManager::setReconnectInterval(unsigned long interval_ms) {
   reconnectInterval = interval_ms;
-  Serial.println("[NetMgr] Reconnect interval set to " + String(interval_ms / 1000) + " seconds");
+  Serial.println("[NetMgr] Reconnect interval: " + String(interval_ms / 1000) + "s");
 }

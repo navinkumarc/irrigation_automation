@@ -18,10 +18,11 @@
 #define ENABLE_HTTP    1    // REST API via WiFi WebServer (independent)
 #define ENABLE_DISPLAY 1    // OLED/LCD display
 #define ENABLE_RTC     1    // Real-time clock (DS3231)
+#define ENABLE_PPPOS   0    // PPPoS cellular data (set 1 to enable, requires modem)
 
 // ========== Modem Hardware ==========
-// Modem hardware is needed only for SMS. Derived automatically — do not edit.
-#if ENABLE_SMS
+// Modem hardware is needed for SMS or PPPoS. Derived automatically — do not edit.
+#if ENABLE_SMS || ENABLE_PPPOS
   #define ENABLE_MODEM 1
 #else
   #define ENABLE_MODEM 0
@@ -133,8 +134,14 @@
 #define DEFAULT_MQTT_USER   MQTT_USER
 #define DEFAULT_MQTT_PASS   MQTT_PASS
 
+// ========== PPPoS Settings ==========
+// Used when ENABLE_PPPOS = 1. PPPoS provides cellular data via EC200U modem.
+#define PPPOS_APN                  "airtelgprs.com"
+#define PPPOS_CONNECT_TIMEOUT_MS   30000   // 30 seconds
+#define WIFI_PPPOS_TIMEOUT_MS      15000   // WiFi fallback timeout
+
 // ========== Modem / SMS Settings ==========
-// Modem UART is used exclusively for SMS AT commands.
+// Modem UART is used for SMS AT commands and/or PPPoS.
 // MQTT and HTTP REST API work independently over WiFi.
 #define MODEM_APN     "airtelgprs.com"
 #define DEFAULT_SIM_APN MODEM_APN
