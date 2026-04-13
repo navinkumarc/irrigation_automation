@@ -6,9 +6,6 @@
 // Forward reference to global loraComm (defined in MasterController.ino)
 extern LoRaComm loraComm;
 
-// Forward reference to global userComm (fallback if not initialized)
-extern UserCommunication userComm;
-
 ScheduleManager::ScheduleManager() : userComm(nullptr) {}
 
 /**
@@ -49,11 +46,10 @@ bool ScheduleManager::closeNode(int node, int idx) {
  */
 void ScheduleManager::notifyStatus(const String &message) {
   Serial.printf("[Schedule] Status: %s\n", message.c_str());
-
+  // userComm pointer is set in init() via commMgr.getUserComm().
+  // If not set, log to Serial only — no global fallback needed.
   if (userComm != nullptr) {
     userComm->sendAlert(message, "INFO");
-  } else {
-    ::userComm.sendAlert(message, "INFO");
   }
 }
 
@@ -196,7 +192,7 @@ bool ScheduleManager::parseJSON(const String &json, Schedule &s) {
 
 void ScheduleManager::startIfDue() {
   if (userComm == nullptr) {
-    Serial.println("[ScheduleManager] ⚠ UserComm not initialized, using global extern");
+    Serial.println("[ScheduleManager] ⚠ UserComm not initialized — call init(commMgr.getUserComm()) in setup()");
   }
 
   Serial.println("[Schedule] Checking if schedule is due...");

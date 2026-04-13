@@ -56,4 +56,8 @@ public:
   void disconnect();
 };
 
+
+// Global singleton instance — defined in MQTTComm.cpp
+extern MQTTComm mqtt;
+
 #endif

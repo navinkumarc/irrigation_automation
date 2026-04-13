@@ -69,4 +69,8 @@ public:
   void queueCommand(const String &command, const String &source);
 };
 
+
+// Global singleton instance — defined in WiFiComm.cpp
+extern WiFiComm wifiComm;
+
 #endif // WIFI_COMM_H
