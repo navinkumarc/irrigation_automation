@@ -15,7 +15,8 @@
 ModemSMS modemSMS;
 
 ModemSMS::ModemSMS() : smsReady(false), needsReconfigure(false), reconfigureAfter(0),
-                        lastSMSCheck(0), smsCheckInterval(10000) {
+                        lastSMSCheck(0), smsCheckInterval(10000),
+                        onReadyCallback(nullptr) {
   pendingMessageIndices.clear();
 }
 
@@ -83,6 +84,7 @@ bool ModemSMS::configure() {
 
   smsReady = true;
   Serial.println("[SMS] ✓ Configuration complete");
+  if (onReadyCallback) onReadyCallback();  // notify CommManager — sends confirmation SMS
 
   // Clean up read messages
   String delResp = modemBase.sendCommand("AT+CMGD=1,1", 3000);
@@ -306,6 +308,7 @@ void ModemSMS::processBackground() {
     needsReconfigure = false;
     if (configure()) {
       Serial.println("[SMS] ✓ Reconfigured successfully");
+      if (onReadyCallback) onReadyCallback();
     } else {
       Serial.println("[SMS] ❌ Reconfigure failed — will retry in 10s");
       needsReconfigure = true;

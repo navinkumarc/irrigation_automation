@@ -14,6 +14,7 @@
 #if ENABLE_SMS
 
 #include <Arduino.h>
+#include <functional>
 #include <map>
 #include <vector>
 #include "Config.h"
@@ -30,6 +31,7 @@ private:
   bool          smsReady;
   bool          needsReconfigure;    // Set when RDY/restart URC received
   unsigned long reconfigureAfter;    // millis() timestamp when safe to reconfigure
+  std::function<void()> onReadyCallback; // Fired once when SMS becomes ready
   unsigned long lastSMSCheck;
   unsigned long smsCheckInterval;
   std::vector<int>                pendingMessageIndices;
@@ -70,6 +72,9 @@ public:
   void processBackground();
 
   bool isReady();
+  // Register a callback fired each time SMS transitions to ready.
+  // Used by CommManager to send a confirmation SMS after reconfigure.
+  void setOnReadyCallback(std::function<void()> cb) { onReadyCallback = cb; }
 
   // Diagnostics
   void printSMSDiagnostics();
