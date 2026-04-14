@@ -236,18 +236,34 @@ void IrrigationSequencer::process() {
       }
       break;
 
-    // ── Pump stopping: wait pumpStopDelayMs then close last valve + pump off
+    // ── Pump stopping:
+    //   Safety rule: pump must stop while minOpenValves are STILL open.
+    //   Sequence:
+    //     1. Wait pumpStopDelayMs (last valve(s) still open — safe pressure)
+    //     2. Stop pump FIRST
+    //     3. Close remaining valves AFTER pump is off
+    //   This prevents pressure shock / pipe damage on pump stop.
     case SeqState::PUMP_STOPPING:
       if (now - stateMs >= pumpStopDelayMs) {
-        // Close last open valve(s)
+        // 1. Verify safe valve state (should always be true at this point)
+        int openNow = countOpenValves();
+        if (openNow < minOpenValves) {
+          sendAlert("[WARNING] Pump stop: only " + String(openNow)
+                    + " valve(s) open (min " + String(minOpenValves)
+                    + ") — stopping anyway to end sequence", SEV_WARNING);
+        }
+
+        // 2. Stop pump FIRST — valves still open, pressure is safe
+        if (ipCtrl) ipCtrl->stop("sequence-complete");
+
+        // 3. Close all remaining open valves AFTER pump is off
         for (int node = 1; node <= maxNodes; node++)
           for (int v = 0; v < maxValvesPerNode; v++)
             if (valveOpen[node][v]) {
               SeqStep s; s.node_id = node; s.valve_id = v; s.duration_ms = 1;
               sendClose(s);
             }
-        // Stop pump
-        if (ipCtrl) ipCtrl->stop("sequence-complete");
+
         memset(valveOpen, 0, sizeof(valveOpen));
         reportValveCount();
         finishSequence();
