@@ -23,8 +23,8 @@ ModemSMS::ModemSMS() : smsReady(false), needsReconfigure(false), reconfigureAfte
 bool ModemSMS::configure() {
   // Request exclusive SMS mode from ModemBase
   if (!modemBase.requestMode(MODEM_MODE_SMS)) {
-    Serial.println("[SMS] ❌ Cannot configure — modem is in DATA (PPP) mode");
-    Serial.println("[SMS] ❌ Call modemPPPoS.disconnect() first");
+    // requestMode() already printed the specific failure reason
+    Serial.println("[SMS] ❌ Cannot acquire SMS mode — see Modem error above");
     return false;
   }
 
@@ -342,23 +342,24 @@ void ModemSMS::processBackground() {
 
 void ModemSMS::processURC(const String &urc) {
   if (urc.indexOf("RDY") >= 0) {
-    // RDY = modem boot-complete URC (normal after power-on or reset).
-    // Schedule re-configuration after a short settle delay.
-    Serial.println("[SMS] Modem boot URC (RDY) — will reconfigure in 3s");
+    // RDY = modem boot-complete URC. The modem is NOW ready for AT commands.
+    // Release the mode lock (it was held by SMS before the restart),
+    // mark modem as ready, and schedule SMS reconfiguration.
+    Serial.println("[SMS] Modem boot complete (RDY) — will reconfigure SMS in 3s");
     smsReady = false;
-    modemBase.setReady(false);
-    modemBase.releaseMode(MODEM_MODE_SMS);
+    modemBase.releaseMode(MODEM_MODE_SMS);  // reset mode lock to NONE
+    modemBase.setReady(true);               // modem IS ready — RDY says so
     needsReconfigure = true;
-    reconfigureAfter = millis() + 3000;  // wait 3s for modem to finish init
+    reconfigureAfter = millis() + 3000;     // short settle before AT commands
     return;
   }
   if (urc.indexOf("POWERED DOWN") >= 0) {
-    Serial.println("[SMS] ⚠ Modem powered down");
+    Serial.println("[SMS] ⚠ Modem powered down — waiting for restart");
     smsReady = false;
-    modemBase.setReady(false);
     modemBase.releaseMode(MODEM_MODE_SMS);
+    modemBase.setReady(false);              // not ready until next RDY
     needsReconfigure = true;
-    reconfigureAfter = millis() + 5000;  // longer settle after power-down
+    reconfigureAfter = millis() + 8000;     // wait for full power cycle + RDY
     return;
   }
   if (urc.indexOf("+CMTI:") >= 0) {
