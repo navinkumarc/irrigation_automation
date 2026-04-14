@@ -255,6 +255,8 @@ public:
   // that need to send alerts. Returns nullptr if not initialized.
   UserCommunication* getUserComm();
   NodeCommunication* getNodeComm();
+  // Register callback for node AUTO_CLOSE events → IrrigationSequencer
+  void setAutoCloseCallback(std::function<void(int,const String&)> cb);
 };
 
 // ─── Global instance ──────────────────────────────────────────────────────────

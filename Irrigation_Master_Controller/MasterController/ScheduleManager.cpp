@@ -2,22 +2,27 @@
 #include "ScheduleManager.h"
 #include "UserCommunication.h"
 #include "IPController.h"
+#include "IrrigationSequencer.h"
+#include "Utils.h"
 #include <ArduinoJson.h>
 
 ScheduleManager::ScheduleManager() : userComm(nullptr), nodeComm(nullptr),
-                                      ipCtrl(nullptr), openValveCount(0) {}
+                                      ipCtrl(nullptr), sequencer(nullptr),
+                                      openValveCount(0) {}
 
 /**
  * Initialize with UserCommunication pointer
  */
 void ScheduleManager::init(UserCommunication* comm, NodeCommunication* nc,
-                            IPController* ipc) {
-  userComm  = comm;
-  nodeComm  = nc;
-  ipCtrl    = ipc;
+                            IPController* ipc, IrrigationSequencer* seq) {
+  userComm   = comm;
+  nodeComm   = nc;
+  ipCtrl     = ipc;
+  sequencer  = seq;
   if (comm) Serial.println("[ScheduleManager] ✓ UserCommunication set");
   if (nc)   Serial.println("[ScheduleManager] ✓ NodeCommunication set");
   if (ipc)  Serial.println("[ScheduleManager] ✓ IPController set");
+  if (seq)  Serial.println("[ScheduleManager] ✓ IrrigationSequencer set");
 }
 
 bool ScheduleManager::startIrrigationPump(const String &reason) {
@@ -207,10 +212,48 @@ bool ScheduleManager::parseJSON(const String &json, Schedule &s) {
 }
 
 void ScheduleManager::startIfDue() {
-  if (userComm == nullptr) {
-    Serial.println("[ScheduleManager] ⚠ UserComm not initialized — call init(commMgr.getUserComm()) in setup()");
-  }
+  if (!sequencer || sequencer->isRunning()) return;
 
-  Serial.println("[Schedule] Checking if schedule is due...");
-  notifyStatus("Schedule check initiated");
+  time_t now = time(nullptr);
+  if (now < 1000000) return;  // RTC not set
+
+  for (auto &sched : schedules) {
+    if (!sched.enabled) continue;
+    if (sched.next_run_epoch == 0) continue;
+    if (now < sched.next_run_epoch) continue;
+
+    // Schedule is due — validate and start
+    if (sched.seq.empty()) {
+      Serial.println("[ScheduleManager] ⚠ Schedule " + sched.id + " has no steps");
+      continue;
+    }
+
+    Serial.println("[ScheduleManager] ▶ Starting schedule: " + sched.id);
+    if (sequencer->start(sched.seq, sched.id)) {
+      if (userComm) userComm->sendAlert(
+        "[INFO] Schedule " + sched.id + " started — " + String(sched.seq.size()) + " step(s)",
+        "INFO");
+      // Advance next_run for recurring schedules
+      if (sched.rec == 'D') {
+        sched.next_run_epoch += 86400;
+      } else if (sched.rec == 'W') {
+        int hour = 0, min = 0;
+        parseTimeHHMM(sched.timeStr, hour, min);
+        sched.next_run_epoch = nextWeekdayOccurrence(
+          now + 60, sched.weekday_mask, hour, min);
+      } else {
+        // One-time: disable after firing
+        sched.enabled = false;
+      }
+    } else {
+      if (userComm) userComm->sendAlert(
+        "[ERROR] Schedule " + sched.id + " failed to start", "ERROR");
+    }
+    break;  // One schedule at a time
+  }
+}
+
+void ScheduleManager::process() {
+  if (sequencer) sequencer->process();
+  startIfDue();
 }

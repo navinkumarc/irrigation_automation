@@ -20,6 +20,7 @@
 #include "WSPController.h"     // Water Source Pump Controller
 #include "IPController.h"      // Irrigation Pump Controller
 #include "PumpScheduleManager.h" // Schedule-based pump control
+#include "IrrigationSequencer.h" // Irrigation sequence execution engine
 
 #if ENABLE_DISPLAY
   #include "DisplayManager.h"
@@ -55,6 +56,7 @@ ScheduleManager scheduleMgr;
 WSPController   wspCtrl;         // Water Source Pump Controller (well → tank)
 IPController    ipcCtrl;         // Irrigation Pump Controller  (tank → valves)
 PumpScheduleManager pumpSched;   // Pump schedule manager
+IrrigationSequencer irrigSeq;    // Irrigation sequence engine
 CommManager     commMgr;        // The only communication object in this file
 
 #if ENABLE_DISPLAY
@@ -170,7 +172,7 @@ void setup() {
 
   // ScheduleManager needs userComm access for sending notifications.
   // CommManager exposes a thin pointer for this purpose.
-  scheduleMgr.init(commMgr.getUserComm(), commMgr.getNodeComm(), &ipcCtrl);
+  scheduleMgr.init(commMgr.getUserComm(), commMgr.getNodeComm(), &ipcCtrl, &irrigSeq);
 
   // ── Pump controllers ──────────────────────────────────────────────────
   wspCtrl.begin();
@@ -187,6 +189,14 @@ void setup() {
   ipcCtrl.setMinOpenValves(IPC_MIN_OPEN_VALVES);
   ipcCtrl.setAlertCallback([](const String &m, const String &s) {
     commMgr.sendAlert(m, s); });
+
+  irrigSeq.init(commMgr.getNodeComm(), &ipcCtrl, commMgr.getUserComm());
+  irrigSeq.setMinOpenValves(IPC_MIN_OPEN_VALVES);
+  commMgr.setAutoCloseCallback([](int nodeId, const String &reason) {
+    irrigSeq.onNodeAutoClose(nodeId, reason);
+  });
+  irrigSeq.setMaxNodes(IPC_MAX_NODES);
+  irrigSeq.setMaxValvesPerNode(IPC_MAX_VALVES_PER_NODE);
 
   pumpSched.init(&wspCtrl, &ipcCtrl, commMgr.getUserComm(), &storage);
   pumpSched.loadSchedules();
@@ -209,6 +219,7 @@ void loop() {
   commMgr.process();
   wspCtrl.process();
   ipcCtrl.process();
+  scheduleMgr.process();   // drives IrrigationSequencer + startIfDue
   pumpSched.process();
 
   // ── Periodic health check (every 60 s) ───────────────────────────────────

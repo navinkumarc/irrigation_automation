@@ -106,8 +106,16 @@
 #define WSP_TANK_EMPTY_PIN    0   // LOW = tank empty (needs filling)
 #define WSP_TANK_FULL_PIN     0   // HIGH = tank full / overflow
 
-// ── IPC minimum open valves before pump allowed to run ───────────────────
-#define IPC_MIN_OPEN_VALVES   1
+// ── IPC node and valve limits ─────────────────────────────────────────────
+#define IPC_MIN_NODES         1    // Minimum nodes supported
+#define IPC_MAX_NODES        15    // Maximum nodes supported
+#define IPC_MAX_VALVES_PER_NODE 4  // Maximum valves per node
+
+// ── IPC pump safety thresholds ────────────────────────────────────────────
+#define IPC_MIN_OPEN_VALVES   1    // Min open valves to start/keep pump running
+#define IPC_VALVE_OVERLAP_MS  500  // Overlap time — next valve opens before prev closes
+#define IPC_PUMP_START_DELAY_MS 2000  // Wait after first valve opens before pump starts
+#define IPC_PUMP_STOP_DELAY_MS  2000  // Wait after last valve closes before pump stops
 
 #define RTC_SDA 41
 #define RTC_SCL 42

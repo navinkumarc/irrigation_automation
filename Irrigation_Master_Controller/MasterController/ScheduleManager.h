@@ -9,6 +9,7 @@
 // Forward declarations
 class UserCommunication;
 class IPController;
+class IrrigationSequencer;
 
 // Note: SeqStep and Schedule are already defined in Config.h
 // Don't redefine them here - just use them
@@ -29,8 +30,10 @@ private:
   // Pointer to NodeCommunication for valve commands
   NodeCommunication* nodeComm;
 
-  // Pointer to Irrigation Pump Controller — for valve guard integration
+  // Pointer to Irrigation Pump Controller
   IPController* ipCtrl;
+  // Pointer to IrrigationSequencer — owns full sequence execution
+  IrrigationSequencer* sequencer;
 
   // Count of currently open valves (reported to IPController)
   int openValveCount = 0;
@@ -43,7 +46,7 @@ public:
    * Must be called in setup() after UserComm is created
    */
   void init(UserCommunication* comm, NodeCommunication* nodeComm = nullptr,
-            IPController* ipCtrl = nullptr);
+            IPController* ipCtrl = nullptr, IrrigationSequencer* seq = nullptr);
 
   /**
    * Irrigation pump control — delegates to IPController with valve guard
@@ -79,9 +82,14 @@ public:
   bool parseJSON(const String &json, Schedule &s);
 
   /**
-   * Check if schedule is due and start if needed
+   * Check all schedules and start any that are due
    */
   void startIfDue();
+
+  /**
+   * Drive sequence execution — call every loop()
+   */
+  void process();
   
   /**
    * Send notification/status message
