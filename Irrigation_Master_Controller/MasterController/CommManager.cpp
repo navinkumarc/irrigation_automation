@@ -305,26 +305,38 @@ CommManagerStatus CommManager::begin(std::vector<Schedule> *sched,
   initSMS();
 #endif
 
-// ── Internet stack — only init when active channel requires it ────────────
-// NetworkRouter, WiFi, PPPoS, MQTT, and HTTP are skipped entirely when
-// the active channel is SMS (or NONE) since no internet bearer is needed.
+// ── Internet stack — only when active channel needs it (MQTT or HTTP) ──────
+// Step 1: bring up the configured bearer(s) — PPPoS and/or WiFi
+// Step 2: init NetworkRouter with whichever bearers are enabled
+// Step 3: init MQTT and/or HTTP on top of the established bearer
   if (commCfg.needsInternet()) {
+
+    // ── Bearer init: only the bearer(s) enabled in runtime config ─────────
 #if ENABLE_PPPOS
-    initPPPoS();
+    if (commCfg.enablePPPoS) initPPPoS();
+    else Serial.println("[CommMgr]  PPPoS skipped (disabled in config)");
 #endif
 #if ENABLE_WIFI
-    initWiFi();
+    if (commCfg.enableWiFi)  initWiFi();
+    else Serial.println("[CommMgr]  WiFi skipped (disabled in config)");
 #endif
+
+    // ── NetworkRouter: routes MQTT/HTTP to the active bearer ─────────────
     initNetworkRouter();
+
+    // ── Services: init MQTT and/or HTTP once bearer is up ─────────────────
 #if ENABLE_MQTT
-    initMQTT();
+    if (commCfg.isMQTT()) initMQTT();
+    else Serial.println("[CommMgr]  MQTT skipped (not active channel)");
 #endif
 #if ENABLE_HTTP
-    initHTTP();
+    if (commCfg.isHTTP()) initHTTP();
+    else Serial.println("[CommMgr]  HTTP skipped (not active channel)");
 #endif
+
   } else {
-    Serial.println("[CommMgr]  Internet stack skipped (active channel: "
-                   + String(commCfg.activeChannelName()) + ")");
+    Serial.println("[CommMgr]  Internet stack skipped — active channel: "
+                   + String(commCfg.activeChannelName()));
   }
   initNodeCommunication();
   initUserCommunication(); // Always last — adapters need modules to be up
@@ -339,12 +351,12 @@ CommManagerStatus CommManager::begin(std::vector<Schedule> *sched,
 void CommManager::process() {
   if (!initialized) return;
 
-  // 1. Network / bearer background — only when internet channel is active
+  // 1. Network / bearer background — only when internet channel is active.
+  // networkRouter.processBackground() feeds the PPP stack, drives WiFi
+  // reconnect (via wifi->processBackground() internally), checks liveness,
+  // and triggers auto-reconnect. No separate WiFi call needed here.
   if (commCfg.needsInternet()) {
     networkRouter.processBackground();
-#if ENABLE_WIFI
-    wifiComm.processBackground();
-#endif
   }
 
   // 2. Poll inbound channels and deliver ChannelMessages to userComm
