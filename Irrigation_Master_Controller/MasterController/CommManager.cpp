@@ -69,12 +69,14 @@ bool CommManager::initSMS() {
   initStatus.totalModules++;
   if (!modemSMS.configure()) { printStepFailure("SMS"); return false; }
 
-  // Register callback: fires each time SMS becomes ready (boot + any restart).
-  // Sends a confirmation SMS so the admin knows the system is online.
+  // Register callback: fires when SMS first becomes ready after boot.
+  // Sends a one-time confirmation SMS so the admin knows the system is online.
   modemSMS.setOnReadyCallback([this]() {
-    String msg = "[INFO] Irrigation controller SMS ready — system online.";
+    static bool sent = false;
+    if (sent) return;          // send only once per boot
+    sent = true;
     Serial.println("[CommMgr] Sending SMS ready confirmation...");
-    modemSMS.sendNotification(msg);
+    modemSMS.sendNotification("[INFO] Irrigation controller online.");
   });
 
   printStepSuccess("SMS");
