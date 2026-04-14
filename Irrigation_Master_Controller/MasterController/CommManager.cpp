@@ -297,25 +297,35 @@ CommManagerStatus CommManager::begin(std::vector<Schedule> *sched,
     Serial.println("[CommMgr]  BLE skipped (disabled in config)");
   }
 #endif
-#if ENABLE_WIFI
-  initWiFi();
-#endif
+// ── Modem (SMS or PPPoS) — always init when modem hardware present ──────────
 #if ENABLE_MODEM
   initModem();       // Must precede SMS / PPPoS
 #endif
 #if ENABLE_SMS
   initSMS();
 #endif
+
+// ── Internet stack — only init when active channel requires it ────────────
+// NetworkRouter, WiFi, PPPoS, MQTT, and HTTP are skipped entirely when
+// the active channel is SMS (or NONE) since no internet bearer is needed.
+  if (commCfg.needsInternet()) {
 #if ENABLE_PPPOS
-  initPPPoS();
+    initPPPoS();
 #endif
-  initNetworkRouter();
+#if ENABLE_WIFI
+    initWiFi();
+#endif
+    initNetworkRouter();
 #if ENABLE_MQTT
-  initMQTT();
+    initMQTT();
 #endif
 #if ENABLE_HTTP
-  initHTTP();
+    initHTTP();
 #endif
+  } else {
+    Serial.println("[CommMgr]  Internet stack skipped (active channel: "
+                   + String(commCfg.activeChannelName()) + ")");
+  }
   initNodeCommunication();
   initUserCommunication(); // Always last — adapters need modules to be up
 
@@ -329,11 +339,13 @@ CommManagerStatus CommManager::begin(std::vector<Schedule> *sched,
 void CommManager::process() {
   if (!initialized) return;
 
-  // 1. Network / bearer background (PPP stack feed, WiFi reconnect, router)
-  networkRouter.processBackground();
+  // 1. Network / bearer background — only when internet channel is active
+  if (commCfg.needsInternet()) {
+    networkRouter.processBackground();
 #if ENABLE_WIFI
-  wifiComm.processBackground();
+    wifiComm.processBackground();
 #endif
+  }
 
   // 2. Poll inbound channels and deliver ChannelMessages to userComm
   pollSMS();

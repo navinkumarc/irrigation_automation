@@ -92,9 +92,10 @@ struct CommConfig {
     chLoRa          = (ENABLE_LORA == 1);     // ON when hardware compiled in
     chBluetooth     = false;                  // OFF by default — enable via Serial
 
-    // Bearer defaults: PPPoS primary if compiled, WiFi as fallback
-    enablePPPoS     = (ENABLE_PPPOS == 1);
-    enableWiFi      = (ENABLE_WIFI  == 1);
+    // Bearer defaults follow compile-time flags.
+    // When switching to MQTT/HTTP channel, also ENABLE WIFI or ENABLE PPPOS.
+    enablePPPoS     = (ENABLE_PPPOS == 1);  // false by default
+    enableWiFi      = (ENABLE_WIFI  == 1);  // false by default; enable when using MQTT/HTTP
 
     wifiSSID        = WIFI_SSID;
     wifiPass        = WIFI_PASS;

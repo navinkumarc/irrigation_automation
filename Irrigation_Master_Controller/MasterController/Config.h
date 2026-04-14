@@ -18,19 +18,30 @@
 //   ENABLE_SMS  = 1  →  Modem used for SMS (AT command mode)
 //   ENABLE_PPPOS = 1  →  Modem used for cellular data (PPP mode)
 //
-#define ENABLE_LORA    1    // LoRa radio hardware
-#define ENABLE_BLE     1    // Bluetooth Low Energy
-#define ENABLE_WIFI    1    // WiFi (required by MQTT and HTTP REST API)
-#define ENABLE_SMS     1    // SMS via modem AT commands — set 0 if ENABLE_PPPOS = 1
-#define ENABLE_MQTT    1    // MQTT via WiFi or PPPoS
-#define ENABLE_HTTP    1    // REST API via WiFi WebServer
+// ── Hardware always present on this board ──────────────────────────────────
+#define ENABLE_LORA    1    // LoRa radio — primary node + user channel
+#define ENABLE_BLE     1    // Bluetooth hardware compiled in (runtime OFF by default)
 #define ENABLE_DISPLAY 1    // OLED/LCD display
 #define ENABLE_RTC     1    // Real-time clock (DS3231)
-#define ENABLE_PPPOS   0    // Cellular data via PPPoS — set 0 if ENABLE_SMS = 1
+
+// ── Active communication channel — choose ONE ───────────────────────────────
+// Default: SMS.  Switch to MQTT or HTTP via: SET CHANNEL MQTT / SET CHANNEL HTTP
+#define ENABLE_SMS     1    // SMS via modem AT commands (default active channel)
+#define ENABLE_MQTT    0    // MQTT over internet bearer (WiFi or PPPoS)
+#define ENABLE_HTTP    0    // HTTP REST API over internet bearer
+
+// ── Internet bearer — only needed when ENABLE_MQTT=1 or ENABLE_HTTP=1 ───────
+#define ENABLE_WIFI    0    // WiFi bearer (disabled when SMS is active channel)
+#define ENABLE_PPPOS   0    // PPPoS cellular data bearer — MUTUALLY EXCLUSIVE with SMS
 
 // Compile-time enforcement of the SMS / PPPoS mutual-exclusion rule
 #if ENABLE_SMS && ENABLE_PPPOS
   #error "ENABLE_SMS and ENABLE_PPPOS cannot both be 1. The modem supports only one mode at a time."
+#endif
+
+// Warn if internet services enabled without a bearer
+#if (ENABLE_MQTT || ENABLE_HTTP) && !ENABLE_WIFI && !ENABLE_PPPOS
+  #warning "ENABLE_MQTT/HTTP is set but neither ENABLE_WIFI nor ENABLE_PPPOS is enabled. No internet bearer available."
 #endif
 
 // ========== Modem Hardware ==========
@@ -167,8 +178,8 @@
 #define NET_BEARER_PPPOS  1
 #define NET_BEARER_WIFI   2
 
-#define MQTT_PRIMARY_BEARER  NET_BEARER_PPPOS   // Primary: cellular, Fallback: WiFi
-#define HTTP_PRIMARY_BEARER  NET_BEARER_PPPOS   // Primary: cellular, Fallback: WiFi
+#define MQTT_PRIMARY_BEARER  NET_BEARER_WIFI    // Primary: WiFi, Fallback: PPPoS
+#define HTTP_PRIMARY_BEARER  NET_BEARER_WIFI    // Primary: WiFi, Fallback: PPPoS
 
 // ========== Modem / SMS Settings ==========
 #define MODEM_APN       "airtelgprs.com"
