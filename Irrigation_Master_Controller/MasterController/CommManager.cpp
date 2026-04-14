@@ -556,38 +556,66 @@ NodeCommunication* CommManager::getNodeComm() {
 }
 
 // ─── printSummary() ──────────────────────────────────────────────────────────
+// Only shows lines for modules that were actually attempted (compile flag ON
+// AND runtime config flag enabled). Skipped modules are not printed at all.
 void CommManager::printSummary() {
   Serial.println("\n==========================================");
   Serial.println("  COMM MANAGER — INIT SUMMARY");
   Serial.println("==========================================");
   Serial.printf("Modules: %d/%d OK\n", initStatus.successfulModules, initStatus.totalModules);
   Serial.println();
-#if ENABLE_BLE
-  Serial.printf("  BLE:     %s\n", initStatus.bleOk           ? "✓ OK" : "✗ FAILED");
-#endif
+
+  // ── LoRa: compiled in AND runtime-enabled ──────────────────────────────
 #if ENABLE_LORA
-  Serial.printf("  LoRa:    %s\n", initStatus.loraOk          ? "✓ OK" : "✗ FAILED");
+  if (commCfg.chLoRa)
+    Serial.printf("  LoRa:     %s\n", initStatus.loraOk ? "✓ OK" : "✗ FAILED");
+#endif
+
+  // ── BLE: compiled in AND runtime-enabled ───────────────────────────────
+#if ENABLE_BLE
+  if (commCfg.chBluetooth)
+    Serial.printf("  BLE:      %s\n", initStatus.bleOk ? "✓ OK" : "✗ FAILED");
+#endif
+
+  // ── Modem: compiled in (always attempted when SMS or PPPoS enabled) ─────
+#if ENABLE_MODEM
+  Serial.printf("  Modem:    %s\n", initStatus.modemOk ? "✓ OK" : "✗ FAILED");
+#endif
+
+  // ── SMS: compiled in AND is the active channel ──────────────────────────
+#if ENABLE_SMS
+  if (commCfg.isSMS())
+    Serial.printf("  SMS:      %s\n", initStatus.smsOk ? "✓ OK" : "✗ FAILED");
+#endif
+
+  // ── Internet stack: only when active channel needs it ───────────────────
+  if (commCfg.needsInternet()) {
+#if ENABLE_PPPOS
+    if (commCfg.enablePPPoS)
+      Serial.printf("  PPPoS:    %s\n",
+                    networkRouter.isPPPoSUp() ? "✓ UP" : "✗ DOWN");
 #endif
 #if ENABLE_WIFI
-  Serial.printf("  WiFi:    %s\n", initStatus.wifiOk          ? "✓ OK" : "⚠ CONNECTING");
+    if (commCfg.enableWiFi)
+      Serial.printf("  WiFi:     %s\n",
+                    networkRouter.isWiFiUp() ? "✓ UP" : "⚠ CONNECTING");
 #endif
-#if ENABLE_MODEM
-  Serial.printf("  Modem:   %s\n", initStatus.modemOk         ? "✓ OK" : "✗ FAILED");
-#endif
-#if ENABLE_SMS
-  Serial.printf("  SMS:     %s\n", initStatus.smsOk           ? "✓ OK" : "✗ FAILED");
-#endif
-#if ENABLE_PPPOS
-  Serial.printf("  PPPoS:   %s\n", initStatus.ppposOk         ? "✓ OK" : "✗ FAILED");
-#endif
-  Serial.printf("  Router:  %s\n", initStatus.networkRouterOk ? "✓ OK" : "⚠ NO BEARER");
+    Serial.printf("  Router:   %s  IP: %s\n",
+                  initStatus.networkRouterOk ? "✓ OK" : "✗ FAILED",
+                  networkRouter.getActiveIP().length()
+                    ? networkRouter.getActiveIP().c_str() : "none");
 #if ENABLE_MQTT
-  Serial.printf("  MQTT:    %s\n", initStatus.mqttOk          ? "✓ OK" : "⚠ CONNECTING");
+    if (commCfg.isMQTT())
+      Serial.printf("  MQTT:     %s\n", initStatus.mqttOk ? "✓ OK" : "✗ FAILED");
 #endif
 #if ENABLE_HTTP
-  Serial.printf("  HTTP:    %s\n", initStatus.httpOk          ? "✓ OK" : "✗ FAILED");
+    if (commCfg.isHTTP())
+      Serial.printf("  HTTP:     %s\n", initStatus.httpOk ? "✓ OK" : "✗ FAILED");
 #endif
-  Serial.printf("  NodeComm:%s\n", initStatus.nodeCommOk      ? "✓ OK" : "✗ FAILED");
-  Serial.printf("  UserComm:%s\n", initStatus.userCommOk      ? "✓ OK" : "✗ FAILED");
+  }
+
+  // ── Node + User communication: always shown ─────────────────────────────
+  Serial.printf("  NodeComm: %s\n", initStatus.nodeCommOk ? "✓ OK" : "✗ FAILED");
+  Serial.printf("  UserComm: %s\n", initStatus.userCommOk ? "✓ OK" : "✗ FAILED");
   Serial.println("==========================================\n");
 }
