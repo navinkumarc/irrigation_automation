@@ -5,6 +5,7 @@
 // Config.h MUST be included first so ENABLE_SMS is defined before
 // ModemSMS.h evaluates its #if ENABLE_SMS guard.
 #include "Config.h"
+#include "CommConfig.h"
 #include "ModemSMS.h"
 #include "ModemBase.h"
 
