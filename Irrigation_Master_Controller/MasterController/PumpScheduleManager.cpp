@@ -1,0 +1,342 @@
+// PumpScheduleManager.cpp  —  Schedule-based pump control
+#include "PumpScheduleManager.h"
+#include "WSPController.h"
+#include "IPController.h"
+#include "UserCommunication.h"
+#include "StorageManager.h"
+#include "Utils.h"
+#include "MessageFormats.h"
+#include <LittleFS.h>
+#include <ArduinoJson.h>
+
+// ─── init() ──────────────────────────────────────────────────────────────────
+void PumpScheduleManager::init(WSPController *w, IPController *i,
+                                UserCommunication *uc, StorageManager *st) {
+  wsp      = w;
+  ipc      = i;
+  userComm = uc;
+  storage  = st;
+  Serial.println("[PumpSched] Initialized");
+}
+
+// ─── sendAlert() ─────────────────────────────────────────────────────────────
+void PumpScheduleManager::sendAlert(const String &msg) {
+  Serial.println("[PumpSched] " + msg);
+  if (userComm) userComm->sendAlert(msg, SEV_INFO);
+}
+
+// ─── generateId() ────────────────────────────────────────────────────────────
+String PumpScheduleManager::generateId(PumpTarget t) {
+  String prefix = (t == PumpTarget::WSP) ? "WS" : "IP";
+  return prefix + String(millis() % 10000);
+}
+
+// ─── computeNextRun() ────────────────────────────────────────────────────────
+void PumpScheduleManager::computeNextRun(PumpSchedule &s) {
+  if (!s.enabled) { s.next_run = 0; return; }
+  int hour = 0, minute = 0;
+  if (!parseTimeHHMM(s.timeStr, hour, minute)) { s.next_run = 0; return; }
+
+  time_t now = time(nullptr);
+  struct tm tmnow;
+  localtime_r(&now, &tmnow);
+
+  if (s.rec == 'O') {
+    // One-time: use today if time hasn't passed, else tomorrow
+    struct tm t = tmnow;
+    t.tm_hour = hour; t.tm_min = minute; t.tm_sec = 0;
+    time_t candidate = mktime(&t);
+    s.next_run = (candidate > now) ? candidate : candidate + 86400;
+
+  } else if (s.rec == 'D') {
+    struct tm t = tmnow;
+    t.tm_hour = hour; t.tm_min = minute; t.tm_sec = 0;
+    time_t candidate = mktime(&t);
+    s.next_run = (candidate > now) ? candidate : candidate + 86400;
+
+  } else if (s.rec == 'W') {
+    s.next_run = nextWeekdayOccurrence(now, s.weekday_mask, hour, minute);
+  }
+}
+
+// ─── process() ───────────────────────────────────────────────────────────────
+void PumpScheduleManager::process() {
+  time_t now = time(nullptr);
+  if (now < 1000000) return;  // RTC not set yet
+
+  // Auto-stop running pump when duration expires
+  if (pumpRunning && runDurationMs > 0 &&
+      millis() - runStartMs >= runDurationMs) {
+    stopRunning("schedule-duration");
+  }
+
+  // Check each schedule
+  for (auto &s : schedules) {
+    if (!s.enabled || s.next_run == 0) continue;
+    if (now >= s.next_run) {
+      fireSchedule(s);
+      // Advance next_run
+      if (s.rec == 'O') {
+        s.enabled = false;
+        saveSchedule(s);
+      } else {
+        computeNextRun(s);
+        saveSchedule(s);
+      }
+    }
+  }
+}
+
+// ─── fireSchedule() ──────────────────────────────────────────────────────────
+void PumpScheduleManager::fireSchedule(PumpSchedule &s) {
+  String label = (s.target == PumpTarget::WSP) ? "Well pump" : "Irrigation pump";
+  sendAlert("[INFO] Schedule " + s.id + ": " + label + " starting");
+
+  bool ok = false;
+  if (s.target == PumpTarget::WSP && wsp) {
+    wsp->setMode(PumpMode::SCHEDULE);
+    ok = wsp->start("sched:" + s.id);
+  } else if (s.target == PumpTarget::IPC && ipc) {
+    ipc->setMode(PumpMode::SCHEDULE);
+    ok = ipc->start("sched:" + s.id);
+  }
+
+  if (ok && s.durationMs > 0) {
+    pumpRunning   = true;
+    runningTarget = s.target;
+    runningSchedId= s.id;
+    runStartMs    = millis();
+    runDurationMs = s.durationMs;
+  }
+}
+
+// ─── stopRunning() ───────────────────────────────────────────────────────────
+void PumpScheduleManager::stopRunning(const String &reason) {
+  if (!pumpRunning) return;
+  if (runningTarget == PumpTarget::WSP && wsp) wsp->stop(reason);
+  if (runningTarget == PumpTarget::IPC && ipc) ipc->stop(reason);
+  sendAlert("[INFO] Schedule " + runningSchedId + ": pump stopped (" + reason + ")");
+  pumpRunning = false;
+  runDurationMs = 0;
+}
+
+// ─── addSchedule() ───────────────────────────────────────────────────────────
+String PumpScheduleManager::addSchedule(PumpTarget t, const String &timeStr,
+                                         char rec, uint32_t durationMs,
+                                         uint8_t weekdays) {
+  PumpSchedule s;
+  s.id           = generateId(t);
+  s.target       = t;
+  s.timeStr      = timeStr;
+  s.rec          = rec;
+  s.durationMs   = durationMs;
+  s.weekday_mask = weekdays;
+  s.enabled      = true;
+  computeNextRun(s);
+  schedules.push_back(s);
+  saveSchedule(s);
+  Serial.println("[PumpSched] Added: " + s.id + " at " + timeStr);
+  return s.id;
+}
+
+// ─── deleteSchedule() ────────────────────────────────────────────────────────
+bool PumpScheduleManager::deleteSchedule(const String &id) {
+  for (auto it = schedules.begin(); it != schedules.end(); ++it) {
+    if (it->id == id) {
+      deleteScheduleFile(id);
+      schedules.erase(it);
+      return true;
+    }
+  }
+  return false;
+}
+
+bool PumpScheduleManager::enableSchedule(const String &id, bool en) {
+  for (auto &s : schedules) {
+    if (s.id == id) {
+      s.enabled = en;
+      if (en) computeNextRun(s);
+      else    s.next_run = 0;
+      saveSchedule(s);
+      return true;
+    }
+  }
+  return false;
+}
+
+// ─── listText() ──────────────────────────────────────────────────────────────
+String PumpScheduleManager::listText() const {
+  if (schedules.empty()) return "No pump schedules";
+  String out;
+  for (auto &s : schedules) {
+    out += s.id + " ";
+    out += (s.target == PumpTarget::WSP) ? "WSP" : "IPC";
+    out += " " + s.timeStr;
+    out += " rec:" + String(s.rec);
+    if (s.durationMs > 0) out += " dur:" + String(s.durationMs/60000) + "min";
+    out += s.enabled ? " [ON]" : " [OFF]";
+    out += "\n";
+  }
+  return out;
+}
+
+String PumpScheduleManager::statusText() const {
+  if (schedules.empty()) return "No pump schedules";
+  String out;
+  time_t now = time(nullptr);
+  for (auto &s : schedules) {
+    if (!s.enabled) continue;
+    out += s.id + " → ";
+    if (s.next_run > 0) {
+      long secs = (long)(s.next_run - now);
+      if (secs < 0) out += "overdue";
+      else if (secs < 3600) out += String(secs/60) + "min";
+      else out += String(secs/3600) + "h";
+    } else {
+      out += "not scheduled";
+    }
+    out += "\n";
+  }
+  return out.length() ? out : "No enabled schedules";
+}
+
+// ─── parseWeekdays() ─────────────────────────────────────────────────────────
+uint8_t PumpScheduleManager::parseWeekdays(const String &wd) {
+  String u = wd; u.toUpperCase();
+  if (u.length() > 0 && isdigit(u.charAt(0))) return (uint8_t)u.toInt();
+  uint8_t mask = 0;
+  const char* days[] = {"SUN","MON","TUE","WED","THU","FRI","SAT"};
+  for (int d = 0; d < 7; d++)
+    if (u.indexOf(days[d]) >= 0) mask |= (1 << d);
+  return mask;
+}
+
+// ─── handleCommand() ─────────────────────────────────────────────────────────
+// up = uppercase, raw = original case
+String PumpScheduleManager::handleCommand(const String &up, const String &raw) {
+
+  if (up == "PSCHED LIST")   return listText();
+  if (up == "PSCHED STATUS") return statusText();
+
+  if (up.startsWith("PSCHED DEL ")) {
+    String id = up.substring(11); id.trim();
+    return deleteSchedule(id) ? "Deleted " + id : "Not found: " + id;
+  }
+  if (up.startsWith("PSCHED ENABLE ")) {
+    String id = up.substring(14); id.trim();
+    return enableSchedule(id, true) ? "Enabled " + id : "Not found: " + id;
+  }
+  if (up.startsWith("PSCHED DISABLE ")) {
+    String id = up.substring(15); id.trim();
+    return enableSchedule(id, false) ? "Disabled " + id : "Not found: " + id;
+  }
+
+  // PSCHED ADD WSP|IPC HH:MM D|W|O [duration_min] [WD=MON,WED,FRI]
+  // Example: PSCHED ADD WSP 06:00 D 60
+  // Example: PSCHED ADD IPC 07:30 W 30 WD=MON,WED,FRI
+  if (up.startsWith("PSCHED ADD ")) {
+    String body = raw.substring(11); body.trim();
+    // Tokenise
+    int p0 = body.indexOf(' ');
+    if (p0 < 0) return "Usage: PSCHED ADD WSP|IPC HH:MM D|W|O [min] [WD=...]";
+    String targetStr = body.substring(0, p0); targetStr.toUpperCase();
+    body = body.substring(p0 + 1); body.trim();
+
+    int p1 = body.indexOf(' ');
+    String timeStr = (p1 > 0) ? body.substring(0, p1) : body;
+    body = (p1 > 0) ? body.substring(p1 + 1) : "";  body.trim();
+
+    int p2 = body.indexOf(' ');
+    String recStr = (p2 > 0) ? body.substring(0, p2) : body;
+    recStr.toUpperCase();
+    body = (p2 > 0) ? body.substring(p2 + 1) : "";  body.trim();
+
+    uint32_t durationMs = 0;
+    uint8_t  weekdays   = 0;
+
+    // Remaining tokens: optional duration_min and optional WD=...
+    while (body.length() > 0) {
+      int sp = body.indexOf(' ');
+      String tok = (sp > 0) ? body.substring(0, sp) : body;
+      String tokUp = tok; tokUp.toUpperCase();
+      if (tokUp.startsWith("WD=")) {
+        weekdays = parseWeekdays(tok.substring(3));
+      } else if (isdigit(tok.charAt(0))) {
+        durationMs = (uint32_t)tok.toInt() * 60000UL;
+      }
+      if (sp < 0) break;
+      body = body.substring(sp + 1); body.trim();
+    }
+
+    PumpTarget t = (targetStr == "WSP") ? PumpTarget::WSP : PumpTarget::IPC;
+    char rec = (recStr == "D") ? 'D' : (recStr == "W") ? 'W' : 'O';
+
+    String id = addSchedule(t, timeStr, rec, durationMs, weekdays);
+    String resp = "Added " + id + " — " + targetStr + " at " + timeStr
+                + " rec:" + String(rec);
+    if (durationMs > 0) resp += " dur:" + String(durationMs/60000) + "min";
+    return resp;
+  }
+
+  return "Unknown pump schedule command. Use: PSCHED LIST|STATUS|ADD|DEL|ENABLE|DISABLE";
+}
+
+// ─── Persistence ─────────────────────────────────────────────────────────────
+void PumpScheduleManager::loadSchedules() {
+  if (!LittleFS.exists("/pump_schedules")) {
+    LittleFS.mkdir("/pump_schedules");
+    Serial.println("[PumpSched] Created /pump_schedules directory");
+    return;
+  }
+  File root = LittleFS.open("/pump_schedules");
+  if (!root) return;
+  schedules.clear();
+  File f = root.openNextFile();
+  while (f) {
+    if (String(f.name()).endsWith(".json")) {
+      String json = f.readString();
+      DynamicJsonDocument doc(512);
+      if (deserializeJson(doc, json) == DeserializationError::Ok) {
+        PumpSchedule s;
+        s.id           = doc["id"]       | "";
+        s.target       = (PumpTarget)(doc["target"] | 1);
+        s.rec          = doc["rec"]       | "O";
+        s.timeStr      = doc["time"]      | "";
+        s.durationMs   = doc["duration"]  | 0;
+        s.weekday_mask = doc["weekdays"]  | 0;
+        s.enabled      = doc["enabled"]   | true;
+        s.next_run     = doc["next_run"]  | 0;
+        if (s.id.length() > 0) {
+          computeNextRun(s);  // recompute in case time drifted
+          schedules.push_back(s);
+          Serial.println("[PumpSched] Loaded: " + s.id);
+        }
+      }
+    }
+    f.close();
+    f = root.openNextFile();
+  }
+  root.close();
+  Serial.printf("[PumpSched] %d schedule(s) loaded\n", (int)schedules.size());
+}
+
+void PumpScheduleManager::saveSchedule(const PumpSchedule &s) {
+  DynamicJsonDocument doc(512);
+  doc["id"]       = s.id;
+  doc["target"]   = (uint8_t)s.target;
+  doc["rec"]      = String(s.rec);
+  doc["time"]     = s.timeStr;
+  doc["duration"] = s.durationMs;
+  doc["weekdays"] = s.weekday_mask;
+  doc["enabled"]  = s.enabled;
+  doc["next_run"] = (long long)s.next_run;
+  String json; serializeJson(doc, json);
+  String path = "/pump_schedules/" + s.id + ".json";
+  File f = LittleFS.open(path, "w");
+  if (f) { f.print(json); f.close(); }
+}
+
+void PumpScheduleManager::deleteScheduleFile(const String &id) {
+  String path = "/pump_schedules/" + id + ".json";
+  if (LittleFS.exists(path)) LittleFS.remove(path);
+}

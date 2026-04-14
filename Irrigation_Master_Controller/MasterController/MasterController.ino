@@ -19,6 +19,7 @@
 #include "CommManager.h"       // Single include for all communication
 #include "WSPController.h"     // Water Source Pump Controller
 #include "IPController.h"      // Irrigation Pump Controller
+#include "PumpScheduleManager.h" // Schedule-based pump control
 
 #if ENABLE_DISPLAY
   #include "DisplayManager.h"
@@ -53,6 +54,7 @@ TimeManager     timeManager;
 ScheduleManager scheduleMgr;
 WSPController   wspCtrl;         // Water Source Pump Controller (well → tank)
 IPController    ipcCtrl;         // Irrigation Pump Controller  (tank → valves)
+PumpScheduleManager pumpSched;   // Pump schedule manager
 CommManager     commMgr;        // The only communication object in this file
 
 #if ENABLE_DISPLAY
@@ -155,7 +157,15 @@ void setup() {
       if (up == "PUMP STATUS") {
         return CommandResult(true, "PUMP", wspCtrl.statusString() + " | " + ipcCtrl.statusString());
       }
-      return CommandResult(false, "PUMP", "Unknown pump command. Use: WSP ON|OFF|AUTO|STATUS  IPC ON|OFF|STATUS");
+      // Pump schedule commands
+      if (up.startsWith("PSCHED ")) {
+        String resp = pumpSched.handleCommand(up, raw);
+        return CommandResult(true, "PSCHED", resp);
+      }
+      return CommandResult(false, "PUMP",
+        "Commands: WSP ON|OFF|AUTO|STATUS  IPC ON|OFF|STATUS  PUMP STATUS\n"
+        "Schedule: PSCHED ADD WSP|IPC HH:MM D|W|O [min] [WD=MON,WED]\n"
+        "          PSCHED LIST|STATUS|DEL <id>|ENABLE <id>|DISABLE <id>");
     });
 
   // ScheduleManager needs userComm access for sending notifications.
@@ -178,6 +188,9 @@ void setup() {
   ipcCtrl.setAlertCallback([](const String &m, const String &s) {
     commMgr.sendAlert(m, s); });
 
+  pumpSched.init(&wspCtrl, &ipcCtrl, commMgr.getUserComm(), &storage);
+  pumpSched.loadSchedules();
+
   Serial.println("\n==========================================");
   Serial.println("✓ SYSTEM READY");
   Serial.println("==========================================\n");
@@ -196,6 +209,7 @@ void loop() {
   commMgr.process();
   wspCtrl.process();
   ipcCtrl.process();
+  pumpSched.process();
 
   // ── Periodic health check (every 60 s) ───────────────────────────────────
   static unsigned long lastHealth = 0;
