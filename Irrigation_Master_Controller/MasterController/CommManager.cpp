@@ -50,19 +50,7 @@ bool CommManager::initLoRa() {
 }
 #endif
 
-#if ENABLE_WIFI
-bool CommManager::initWiFi() {
-  printStepHeader("WiFi");
-  initStatus.totalModules++;
-  if (wifiComm.init(WIFI_SSID, WIFI_PASS))
-    Serial.println("[CommMgr]   IP: " + wifiComm.getIPAddress());
-  else
-    Serial.println("[CommMgr]   ⚠ WiFi connecting in background");
-  printStepSuccess("WiFi");
-  initStatus.wifiOk = true; initStatus.successfulModules++;
-  return true;
-}
-#endif
+// initWiFi() removed — NetworkRouter owns WiFi init via registerBearers()/begin()
 
 #if ENABLE_MODEM
 bool CommManager::initModem() {
@@ -86,44 +74,32 @@ bool CommManager::initSMS() {
 }
 #endif
 
-#if ENABLE_PPPOS
-bool CommManager::initPPPoS() {
-  printStepHeader("PPPoS (ModemPPPoS)");
-  initStatus.totalModules++;
-  if (!modemPPPoS.init()) { printStepFailure("PPPoS", "init() failed"); return false; }
-  if (!modemPPPoS.connect(PPPOS_CONNECT_TIMEOUT_MS)) {
-    printStepFailure("PPPoS", "connect() failed — check SIM/APN"); return false;
-  }
-  printStepSuccess("PPPoS");
-  Serial.println("[CommMgr]   PPPoS IP: " + modemPPPoS.getLocalIP());
-  initStatus.ppposOk = true; initStatus.successfulModules++;
-  return true;
-}
-#endif
+// initPPPoS() removed — NetworkRouter owns PPPoS init via registerBearers()/begin()
 
 bool CommManager::initNetworkRouter() {
+  // NetworkRouter owns all bearer logic.
+  // CommManager only registers the hardware pointers and calls begin().
   printStepHeader("NetworkRouter");
   initStatus.totalModules++;
-  // Runtime bearer selection: use commCfg flags to decide which bearers to pass.
-  // PPPoS = primary, WiFi = fallback. NetworkRouter handles bring-up order.
+
+  // Register hardware pointers — pass nullptr for modules not compiled in
 #if ENABLE_PPPOS && ENABLE_WIFI
-  networkRouter.init(
-    commCfg.enablePPPoS ? &modemPPPoS : nullptr,
-    commCfg.enableWiFi  ? &wifiComm   : nullptr);
+  networkRouter.registerBearers(&modemPPPoS, &wifiComm);
 #elif ENABLE_PPPOS
-  networkRouter.init(commCfg.enablePPPoS ? &modemPPPoS : nullptr, nullptr);
+  networkRouter.registerBearers(&modemPPPoS, nullptr);
 #elif ENABLE_WIFI
-  networkRouter.init(nullptr, commCfg.enableWiFi ? &wifiComm : nullptr);
+  networkRouter.registerBearers(nullptr, &wifiComm);
 #else
-  networkRouter.init(nullptr, nullptr);
-  printStepFailure("NetworkRouter", "no bearers enabled");
-  initStatus.successfulModules++;
-  return false;
+  networkRouter.registerBearers(nullptr, nullptr);
 #endif
-  if (!networkRouter.connect()) {
+
+  // begin() decides which bearer(s) to bring up per commCfg runtime flags:
+  //   PPPoS only → PPPoS
+  //   WiFi  only → WiFi
+  //   Both       → PPPoS primary, WiFi fallback
+  if (!networkRouter.begin()) {
     printStepFailure("NetworkRouter", "no bearer came up");
-    initStatus.networkRouterOk = false;
-    initStatus.successfulModules++;
+    initStatus.networkRouterOk = false; initStatus.successfulModules++;
     return false;
   }
   printStepSuccess("NetworkRouter");
@@ -311,17 +287,9 @@ CommManagerStatus CommManager::begin(std::vector<Schedule> *sched,
 // Step 3: init MQTT and/or HTTP on top of the established bearer
   if (commCfg.needsInternet()) {
 
-    // ── Bearer init: only the bearer(s) enabled in runtime config ─────────
-#if ENABLE_PPPOS
-    if (commCfg.enablePPPoS) initPPPoS();
-    else Serial.println("[CommMgr]  PPPoS skipped (disabled in config)");
-#endif
-#if ENABLE_WIFI
-    if (commCfg.enableWiFi)  initWiFi();
-    else Serial.println("[CommMgr]  WiFi skipped (disabled in config)");
-#endif
-
-    // ── NetworkRouter: routes MQTT/HTTP to the active bearer ─────────────
+    // NetworkRouter owns all bearer init (PPPoS/WiFi) and routing.
+    // CommManager calls begin() — NetworkRouter decides which bearer(s)
+    // to bring up based on commCfg.enablePPPoS / enableWiFi.
     initNetworkRouter();
 
     // ── Services: init MQTT and/or HTTP once bearer is up ─────────────────
@@ -558,15 +526,10 @@ SystemStatus CommManager::buildSystemStatus() const {
   s.loraUp = initStatus.loraOk;
 #endif
 
-  // ── Internet bearer: PPPoS primary, WiFi fallback ─────────────────────
-#if ENABLE_PPPOS
-  s.ppposUp = initStatus.ppposOk && modemPPPoS.isConnected();
-  if (s.ppposUp) s.networkIP = modemPPPoS.getLocalIP();
-#endif
-#if ENABLE_WIFI
-  s.wifiUp = initStatus.wifiOk && wifiComm.isConnected();
-  if (s.wifiUp && s.networkIP.length() == 0) s.networkIP = wifiComm.getIPAddress();
-#endif
+  // ── Internet bearer — queried from NetworkRouter ──────────────────────
+  s.ppposUp    = networkRouter.isPPPoSUp();
+  s.wifiUp     = networkRouter.isWiFiUp();
+  s.networkIP  = networkRouter.getActiveIP();
   s.bearerName = s.ppposUp ? "PPPoS" : (s.wifiUp ? "WiFi" : "None");
 
   return s;

@@ -83,11 +83,9 @@ struct Schedule;
 struct CommManagerStatus {
   bool bleOk           = false;
   bool loraOk          = false;
-  bool wifiOk          = false;
   bool modemOk         = false;
   bool smsOk           = false;
-  bool ppposOk         = false;
-  bool networkRouterOk = false;
+  bool networkRouterOk = false;   // NetworkRouter owns PPPoS + WiFi state
   bool mqttOk          = false;
   bool httpOk          = false;
   bool nodeCommOk      = false;
@@ -168,18 +166,14 @@ private:
 #if ENABLE_LORA
   bool initLoRa();
 #endif
-#if ENABLE_WIFI
-  bool initWiFi();
-#endif
+// initWiFi() removed — NetworkRouter owns WiFi init
 #if ENABLE_MODEM
   bool initModem();
 #endif
 #if ENABLE_SMS
   bool initSMS();
 #endif
-#if ENABLE_PPPOS
-  bool initPPPoS();
-#endif
+// initPPPoS() removed — NetworkRouter owns PPPoS init
   bool initNetworkRouter();
 #if ENABLE_MQTT
   bool initMQTT();

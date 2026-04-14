@@ -1,159 +1,127 @@
-// NetworkRouter.h - Data provider selection and fallback management
+// NetworkRouter.h  —  Internet bearer management (PPPoS and WiFi)
 //
-// Responsibilities:
-//   • Manages the active data bearer: PPPoS (cellular) or WiFi
-//   • Per-service provider selection (MQTT, HTTP/REST)
-//       – Primary and fallback providers are configured in Config.h
-//       – At runtime, NetworkRouter picks the best available bearer
-//         for each service and exposes it via getProviderFor()
-//   • Automatic fallback: if the primary bearer is unavailable,
-//     the fallback bearer is tried transparently
-//   • Auto-reconnect loop via processBackground()
-//   • Feeds the PPP stack (calls modemPPPoS.loop()) when PPPoS is active
+// NetworkRouter is the single owner of all internet bearer logic.
+// CommManager calls only begin() and processBackground().
 //
-// Bearer options (set in Config.h):
-//   NET_BEARER_PPPOS = 1  — cellular data via ModemPPPoS
-//   NET_BEARER_WIFI  = 2  — on-board WiFi via WiFiComm
+// ── Responsibilities ──────────────────────────────────────────────────────────
+//   • Owns PPPoS and WiFi hardware modules (holds pointers)
+//   • Decides which bearer(s) to bring up based on runtime CommConfig flags
+//   • Priority rule: PPPoS = primary, WiFi = fallback
+//       PPPoS only enabled  → use PPPoS
+//       WiFi  only enabled  → use WiFi
+//       Both  enabled       → try PPPoS first, fall back to WiFi
+//       Neither enabled     → no internet
+//   • Provides IP connectivity for MQTT and HTTP
+//   • Drives PPP stack (pppos->loop()) every processBackground() call
+//   • Drives WiFi reconnect (wifi->processBackground()) every call
+//   • Auto-reconnects dropped bearers after reconnectInterval
 //
-// Per-service primary bearer (set in Config.h):
-//   MQTT_PRIMARY_BEARER  — NET_BEARER_PPPOS or NET_BEARER_WIFI
-//   HTTP_PRIMARY_BEARER  — NET_BEARER_PPPOS or NET_BEARER_WIFI
-//
-// Service lookup:
-//   NetworkRouter::Service::MQTT
-//   NetworkRouter::Service::HTTP
-//   router.getProviderFor(Service::MQTT)  → ConnectionType (PPPOS / WIFI / NONE)
+// ── CommManager interface (the only surface CommManager touches) ──────────────
+//   networkRouter.begin()              — init bearers per CommConfig, connect
+//   networkRouter.processBackground()  — call every loop(); feeds all bearers
+//   networkRouter.isAnyUp()            — at least one bearer connected
+//   networkRouter.isPPPoSUp()          — PPPoS specifically up
+//   networkRouter.isWiFiUp()           — WiFi specifically up
+//   networkRouter.getActiveIP()        — IP from whichever bearer is up
+//   networkRouter.printStatus()        — diagnostics
 
 #ifndef NETWORK_ROUTER_H
 #define NETWORK_ROUTER_H
 
 #include <Arduino.h>
 #include "Config.h"
+#include "CommConfig.h"
 
-// Forward declarations — real headers included only when flags are set
+// Forward declarations
 class ModemPPPoS;
 class WiFiComm;
 
-// ─── Bearer identifiers ───────────────────────────────────────────────────────
+// ─── Bearer identifier ────────────────────────────────────────────────────────
+enum class ConnectionType { NONE, PPPOS, WIFI };
 
-// Active data bearer
-enum class ConnectionType {
-  NONE,    // No bearer available
-  PPPOS,   // Cellular PPP via ModemPPPoS
-  WIFI     // On-board WiFi via WiFiComm
-};
-
-// Logical bearer preference token (maps to ConnectionType at runtime)
-// Used as a value in Config.h macros
-#define NET_BEARER_PPPOS  1
-#define NET_BEARER_WIFI   2
-
-// ─── Router states ────────────────────────────────────────────────────────────
-
-enum class RouterState {
-  IDLE,
-  CONNECTING,
-  CONNECTED,
-  RECONNECTING,
-  FAILED
-};
+// ─── Router state ─────────────────────────────────────────────────────────────
+enum class RouterState { IDLE, CONNECTING, CONNECTED, RECONNECTING, FAILED };
 
 // ─── NetworkRouter ────────────────────────────────────────────────────────────
-
 class NetworkRouter {
 public:
-  // Services that need a data bearer
+  // Service tokens used by getProviderFor()
   enum class Service { MQTT, HTTP };
 
-  // Per-service routing result
   struct ServiceRoute {
     Service        service;
-    ConnectionType bearer;      // Active bearer for this service
+    ConnectionType bearer;
     String         localIP;
-    bool           isOnFallback; // True if primary was unavailable
+    bool           isOnFallback = false;
   };
 
 private:
-  ModemPPPoS* pppos;
-  WiFiComm*   wifi;
+  ModemPPPoS    *pppos = nullptr;
+  WiFiComm      *wifi  = nullptr;
 
-  ConnectionType ppposState;   // PPPOS or NONE
-  ConnectionType wifiState;    // WIFI  or NONE
+  ConnectionType ppposState = ConnectionType::NONE;
+  ConnectionType wifiState  = ConnectionType::NONE;
+  RouterState    state      = RouterState::IDLE;
 
-  RouterState state;
-  unsigned long lastReconnectAttempt;
-  unsigned long reconnectInterval;
+  unsigned long lastReconnectAttempt = 0;
+  unsigned long reconnectInterval    = NETWORK_RECONNECT_INTERVAL_MS;
 
-  // Low-level bearer bring-up
-  bool bringUpPPPoS(uint32_t timeout_ms);
-  bool bringUpWiFi (uint32_t timeout_ms);
+  // Internal bearer bring-up / tear-down
+  bool bringUpPPPoS();
+  bool bringUpWiFi();
   void tearDownPPPoS();
-
-  // Check liveness of an active bearer
   bool checkPPPoS();
   bool checkWiFi();
-
-  // Resolve preferred bearer for a service (from Config.h macros)
-  ConnectionType preferredBearerFor(Service svc) const;
-  ConnectionType fallbackBearerFor (Service svc) const;
-
-  // Is a given bearer currently up?
   bool isBearerUp(ConnectionType b) const;
-
   const char* bearerName(ConnectionType b) const;
 
 public:
-  NetworkRouter();
+  NetworkRouter() = default;
 
-  // ── Lifecycle ──────────────────────────────────────────────────────────────
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
 
-  // Register bearer modules. Call before connect().
-  // Either pointer may be nullptr if the corresponding flag is disabled.
-  void init(ModemPPPoS* ppposModule, WiFiComm* wifiModule);
+  // Register bearer modules. Called once during CommManager startup.
+  // Pass nullptr for a module that is not compiled in.
+  void registerBearers(ModemPPPoS *ppposModule, WiFiComm *wifiModule);
 
-  // Bring up the required bearers based on service provider config.
-  // Tries PPPoS and/or WiFi depending on MQTT_PRIMARY_BEARER /
-  // HTTP_PRIMARY_BEARER settings. Returns true if at least one
-  // bearer needed by a configured service came up.
-  bool connect();
+  // Initialise and connect bearers according to CommConfig runtime flags.
+  //   PPPoS only: bring up PPPoS
+  //   WiFi  only: bring up WiFi
+  //   Both:       try PPPoS first (primary), fall back to WiFi
+  // Returns true if at least one bearer came up.
+  bool begin();
 
   // Tear down all active bearers.
-  bool disconnect();
+  void disconnect();
 
-  // ── Service routing ────────────────────────────────────────────────────────
+  // ── Background — call every loop() ───────────────────────────────────────
 
-  // Returns the active bearer for a given service.
-  // If the primary bearer is down, returns the fallback bearer.
-  // Returns ConnectionType::NONE if neither is available.
-  ServiceRoute getProviderFor(Service svc);
-
-  // Convenience: is there any bearer for this service?
-  bool isServiceAvailable(Service svc);
-
-  // ── Global bearer status ───────────────────────────────────────────────────
-
-  bool           isPPPoSUp()  const;
-  bool           isWiFiUp()   const;
-  bool           isAnyUp()    const;
-  RouterState    getState()   const;
-  String         getPPPoSIP() const;
-  String         getWiFiIP()  const;
-
-  // ── Background tasks ───────────────────────────────────────────────────────
-
-  // Call every loop():
-  //   • Feeds PPP stack bytes when PPPoS is active
-  //   • Detects dropped bearers and triggers reconnect
-  //   • Attempts reconnect after reconnectInterval
+  // • Feeds PPP stack bytes (pppos->loop()) when PPPoS active
+  // • Drives WiFi reconnect (wifi->processBackground()) when WiFi registered
+  // • Checks bearer liveness; drops stale bearer state
+  // • Triggers auto-reconnect when all bearers are down
   void processBackground();
 
-  void setReconnectInterval(unsigned long ms);
+  // ── Service routing ───────────────────────────────────────────────────────
 
-  // ── Diagnostics ────────────────────────────────────────────────────────────
+  // Returns the best available bearer for a service (PPPoS preferred over WiFi).
+  ServiceRoute getProviderFor(Service svc);
+  bool         isServiceAvailable(Service svc);
+
+  // ── Status ───────────────────────────────────────────────────────────────
+  bool        isPPPoSUp()     const;
+  bool        isWiFiUp()      const;
+  bool        isAnyUp()       const;
+  RouterState getState()      const;
+  String      getPPPoSIP()    const;
+  String      getWiFiIP()     const;
+  String      getActiveIP()   const;   // IP of whichever bearer is up (PPPoS preferred)
+
+  void setReconnectInterval(unsigned long ms);
   void printStatus() const;
 };
 
-// ─── Global instance ──────────────────────────────────────────────────────────
+// Global instance
 extern NetworkRouter networkRouter;
 
 #endif // NETWORK_ROUTER_H
