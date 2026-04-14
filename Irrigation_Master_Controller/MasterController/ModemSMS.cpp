@@ -14,7 +14,8 @@
 
 ModemSMS modemSMS;
 
-ModemSMS::ModemSMS() : smsReady(false), lastSMSCheck(0), smsCheckInterval(10000) {
+ModemSMS::ModemSMS() : smsReady(false), needsReconfigure(false), reconfigureAfter(0),
+                        lastSMSCheck(0), smsCheckInterval(10000) {
   pendingMessageIndices.clear();
 }
 
@@ -299,6 +300,20 @@ bool ModemSMS::isReady() { return smsReady; }
 
 // ─── processBackground() ─────────────────────────────────────────────────────
 void ModemSMS::processBackground() {
+  // Auto-reconfigure after modem restart (RDY URC)
+  if (needsReconfigure && millis() >= reconfigureAfter) {
+    Serial.println("[SMS] Auto-reconfiguring after modem restart...");
+    needsReconfigure = false;
+    if (configure()) {
+      Serial.println("[SMS] ✓ Reconfigured successfully");
+    } else {
+      Serial.println("[SMS] ❌ Reconfigure failed — will retry in 10s");
+      needsReconfigure = true;
+      reconfigureAfter = millis() + 10000;
+    }
+    return;
+  }
+
   // Only process if we hold the SMS mode
   if (!modemBase.isInMode(MODEM_MODE_SMS)) return;
 
@@ -326,11 +341,24 @@ void ModemSMS::processBackground() {
 }
 
 void ModemSMS::processURC(const String &urc) {
-  if (urc.indexOf("RDY") >= 0 || urc.indexOf("POWERED DOWN") >= 0) {
-    Serial.println("[SMS] ⚠ Modem restart detected");
+  if (urc.indexOf("RDY") >= 0) {
+    // RDY = modem boot-complete URC (normal after power-on or reset).
+    // Schedule re-configuration after a short settle delay.
+    Serial.println("[SMS] Modem boot URC (RDY) — will reconfigure in 3s");
     smsReady = false;
     modemBase.setReady(false);
     modemBase.releaseMode(MODEM_MODE_SMS);
+    needsReconfigure = true;
+    reconfigureAfter = millis() + 3000;  // wait 3s for modem to finish init
+    return;
+  }
+  if (urc.indexOf("POWERED DOWN") >= 0) {
+    Serial.println("[SMS] ⚠ Modem powered down");
+    smsReady = false;
+    modemBase.setReady(false);
+    modemBase.releaseMode(MODEM_MODE_SMS);
+    needsReconfigure = true;
+    reconfigureAfter = millis() + 5000;  // longer settle after power-down
     return;
   }
   if (urc.indexOf("+CMTI:") >= 0) {

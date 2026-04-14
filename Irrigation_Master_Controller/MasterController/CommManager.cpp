@@ -349,8 +349,11 @@ void CommManager::process() {
 
 void CommManager::pollSMS() {
 #if ENABLE_SMS
-  if (!initStatus.smsOk || !modemSMS.isReady()) return;
+  if (!initStatus.smsOk) return;
+  // Always call processBackground() — it handles auto-reconfigure after RDY URC
+  // even when smsReady is temporarily false during modem restart.
   modemSMS.processBackground();
+  if (!modemSMS.isReady()) return;  // Not ready yet — skip message processing
   auto incoming = modemSMS.processIncomingMessages(commCfg.smsPhone1);
   SystemStatus sys = buildSystemStatus();
   for (auto &sms : incoming) {

@@ -28,6 +28,8 @@ struct SMSMessage {
 class ModemSMS {
 private:
   bool          smsReady;
+  bool          needsReconfigure;    // Set when RDY/restart URC received
+  unsigned long reconfigureAfter;    // millis() timestamp when safe to reconfigure
   unsigned long lastSMSCheck;
   unsigned long smsCheckInterval;
   std::vector<int>                pendingMessageIndices;
