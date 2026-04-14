@@ -23,6 +23,19 @@ bool SerialConfigHandler::handle(const String &line) {
   if (up.startsWith("ENABLE "))      return handleBearer(up, true);
   if (up.startsWith("DISABLE "))     return handleBearer(up, false);
   if (up.startsWith("SET "))         return handleSet(up, line);
+
+  if (up == "RESTART" || up == "REBOOT") {
+    Serial.println("[Config] Restarting in 1 second...");
+    Serial.flush(); delay(1000); ESP.restart();
+    return true;
+  }
+  if (up == "FACTORY RESET") {
+    Serial.println("[Config] Factory reset — clearing all config and restarting...");
+    _storage.resetCommConfig(commCfg);
+    Serial.println("[Config] ✓ Config cleared. Restarting...");
+    Serial.flush(); delay(1000); ESP.restart();
+    return true;
+  }
   return false;
 }
 
@@ -139,6 +152,8 @@ void SerialConfigHandler::printHelp() const {
     "SHOW CONFIG                   Print current config\n"
     "SAVE CONFIG                   Save to LittleFS flash\n"
     "RESET CONFIG                  Restore firmware defaults\n"
+    "RESTART                       Reboot the controller\n"
+    "FACTORY RESET                 Clear all config and reboot\n"
     "\n"
     "--- Active Channel (mutually exclusive) ---\n"
     "SET CHANNEL SMS               Use SMS as active channel\n"

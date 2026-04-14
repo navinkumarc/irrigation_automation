@@ -1,6 +1,7 @@
 // UserCommunication.cpp - User ↔ Controller message exchange
 // No module headers. No #if ENABLE_X guards. Pure business logic.
 #include "UserCommunication.h"
+#include <Arduino.h>
 #include "MessageFormats.h"
 
 // ─── Constructor ──────────────────────────────────────────────────────────────
@@ -108,6 +109,11 @@ CommandResult UserCommunication::dispatchCommand(const String &raw,
   if (cmd == "STATS")            return handleStatsCommand();
   if (cmd.startsWith("START "))  return handleStartCommand(raw.substring(6));
   if (cmd.startsWith("NODE "))   return handleNodeCommand(raw.substring(5));
+  if (cmd == "RESTART" || cmd == "REBOOT") {
+    sendAlert(MsgFmt::alertWarning("Controller restarting now..."), SEV_WARNING);
+    delay(500); ESP.restart();
+    return CommandResult(true, "RESTART", "Restarting...");
+  }
 
   return CommandResult(false, "UNKNOWN", "Unknown command. Send HELP for list.");
 }
@@ -297,5 +303,6 @@ String UserCommunication::getHelpText() const {
     "  STATS            — memory & uptime\n"
     "  DIAGNOSTICS      — full system diagnostic (serial)\n"
     "  CHECK            — health check\n"
+    "  RESTART          — reboot the controller\n"
     "  HELP             — this list\n";
 }
