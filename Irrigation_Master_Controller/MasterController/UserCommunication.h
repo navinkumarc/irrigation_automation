@@ -91,6 +91,9 @@ private:
   // Callback into NodeCommunication for NODE <id> <cmd> commands
   NodeCommandCallback nodeCommandCallback;
 
+  // Callback for WSP/IPC/PUMP commands — wired from MasterController.ino
+  std::function<CommandResult(const String&)> pumpCommandCallback;
+
   // Admin phone — used by SMS adapter for direct replies
   String adminPhone;
 
@@ -103,6 +106,7 @@ private:
   CommandResult handleCheckCommand     ();
   CommandResult handleNodeCommand      (const String &args);
   CommandResult handleHelpCommand      ();
+  CommandResult handlePumpCommand      (const String &raw);
   CommandResult handleStatsCommand     ();
 
   CommandResult dispatchCommand(const String &cmd,
@@ -136,6 +140,8 @@ public:
 
   // Register the callback used to execute NODE <id> <cmd> commands.
   void setNodeCommandCallback(NodeCommandCallback cb);
+  void setPumpCommandCallback(std::function<CommandResult(const String&)> cb)
+    { pumpCommandCallback = cb; }
 
   // ── Inbound — called by CommManager channel pollers ──────────────────────
 

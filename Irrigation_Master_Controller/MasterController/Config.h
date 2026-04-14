@@ -92,8 +92,22 @@
 #define MODEM_PWRKEY 4
 #define MODEM_RESET  15
 
-#define PUMP_PIN         25
-#define PUMP_ACTIVE_HIGH true
+// ── Irrigation Pump Controller (IPC) — drives irrigation pump ───────────
+#define PUMP_PIN         25    // legacy alias — same as IPC_PIN
+#define PUMP_ACTIVE_HIGH true  // legacy alias — same as IPC_ACTIVE_HIGH
+#define IPC_PIN          25    // Irrigation Pump Control output pin
+#define IPC_ACTIVE_HIGH  true  // HIGH = pump ON
+
+// ── Water Source Pump Controller (WSPC) — drives well/borewell pump ──────
+#define WSP_PIN          26    // Water Source Pump Control output pin
+#define WSP_ACTIVE_HIGH  true  // HIGH = pump ON
+
+// ── WSPC Tank sensor pins (optional — 0 = not used) ─────────────────────
+#define WSP_TANK_EMPTY_PIN    0   // LOW = tank empty (needs filling)
+#define WSP_TANK_FULL_PIN     0   // HIGH = tank full / overflow
+
+// ── IPC minimum open valves before pump allowed to run ───────────────────
+#define IPC_MIN_OPEN_VALVES   1
 
 #define RTC_SDA 41
 #define RTC_SCL 42

@@ -114,6 +114,11 @@ CommandResult UserCommunication::dispatchCommand(const String &raw,
     delay(500); ESP.restart();
     return CommandResult(true, "RESTART", "Restarting...");
   }
+  // Pump commands forwarded via callback
+  if (cmd.startsWith("WSP ") || cmd.startsWith("IPC "))
+    return handlePumpCommand(raw);
+  if (cmd == "PUMP STATUS")
+    return handlePumpCommand(raw);
 
   return CommandResult(false, "UNKNOWN", "Unknown command. Send HELP for list.");
 }
@@ -178,6 +183,12 @@ CommandResult UserCommunication::handleStatsCommand() {
               + String(ESP.getHeapSize() / 1024) + "KB total"
               + " | Uptime: " + String(millis() / 1000) + "s";
   return CommandResult(true, "STATS", resp);
+}
+
+// ─── handlePumpCommand() ────────────────────────────────────────────────────
+CommandResult UserCommunication::handlePumpCommand(const String &raw) {
+  if (pumpCommandCallback) return pumpCommandCallback(raw);
+  return CommandResult(false, "PUMP", "Pump controller not configured");
 }
 
 // ─── Format helpers ───────────────────────────────────────────────────────────
@@ -304,5 +315,8 @@ String UserCommunication::getHelpText() const {
     "  DIAGNOSTICS      — full system diagnostic (serial)\n"
     "  CHECK            — health check\n"
     "  RESTART          — reboot the controller\n"
+    "  WSP ON|OFF|AUTO|STATUS  — well pump control\n"
+    "  IPC ON|OFF|STATUS       — irrigation pump control\n"
+    "  PUMP STATUS             — status of both pumps\n"
     "  HELP             — this list\n";
 }

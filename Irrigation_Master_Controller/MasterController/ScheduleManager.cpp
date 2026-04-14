@@ -1,29 +1,47 @@
 // ScheduleManager.cpp
 #include "ScheduleManager.h"
 #include "UserCommunication.h"
+#include "IPController.h"
 #include <ArduinoJson.h>
 
-ScheduleManager::ScheduleManager() : userComm(nullptr), nodeComm(nullptr) {}
+ScheduleManager::ScheduleManager() : userComm(nullptr), nodeComm(nullptr),
+                                      ipCtrl(nullptr), openValveCount(0) {}
 
 /**
  * Initialize with UserCommunication pointer
  */
-void ScheduleManager::init(UserCommunication* comm, NodeCommunication* nc) {
+void ScheduleManager::init(UserCommunication* comm, NodeCommunication* nc,
+                            IPController* ipc) {
   userComm  = comm;
   nodeComm  = nc;
+  ipCtrl    = ipc;
   if (comm) Serial.println("[ScheduleManager] ✓ UserCommunication set");
   if (nc)   Serial.println("[ScheduleManager] ✓ NodeCommunication set");
-  if (!comm && !nc) Serial.println("[ScheduleManager] ⚠ No comm pointers — notifications and valve commands disabled");
+  if (ipc)  Serial.println("[ScheduleManager] ✓ IPController set");
 }
 
-void ScheduleManager::setPump(bool on) {
-  pinMode(PUMP_PIN, OUTPUT);
-  if (PUMP_ACTIVE_HIGH) {
-    digitalWrite(PUMP_PIN, on ? HIGH : LOW);
-  } else {
-    digitalWrite(PUMP_PIN, on ? LOW : HIGH);
-  }
-  Serial.printf("[Pump] %s\n", on ? "ON" : "OFF");
+bool ScheduleManager::startIrrigationPump(const String &reason) {
+  if (!ipCtrl) { Serial.println("[Schedule] ❌ IPController not set"); return false; }
+  return ipCtrl->start(reason);
+}
+
+void ScheduleManager::stopIrrigationPump(const String &reason) {
+  if (ipCtrl) ipCtrl->stop(reason);
+}
+
+void ScheduleManager::valveOpened() {
+  openValveCount++;
+  if (ipCtrl) ipCtrl->setOpenValveCount(openValveCount);
+}
+
+void ScheduleManager::valveClosed() {
+  if (openValveCount > 0) openValveCount--;
+  if (ipCtrl) ipCtrl->setOpenValveCount(openValveCount);
+}
+
+void ScheduleManager::setOpenValveCount(int n) {
+  openValveCount = max(0, n);
+  if (ipCtrl) ipCtrl->setOpenValveCount(openValveCount);
 }
 
 bool ScheduleManager::openNode(int node, int idx, uint32_t duration) {

@@ -17,6 +17,8 @@
 #include "TimeManager.h"
 #include "ScheduleManager.h"
 #include "CommManager.h"       // Single include for all communication
+#include "WSPController.h"     // Water Source Pump Controller
+#include "IPController.h"      // Irrigation Pump Controller
 
 #if ENABLE_DISPLAY
   #include "DisplayManager.h"
@@ -49,6 +51,8 @@ Preferences     prefs;
 StorageManager  storage;
 TimeManager     timeManager;
 ScheduleManager scheduleMgr;
+WSPController   wspCtrl;         // Water Source Pump Controller (well → tank)
+IPController    ipcCtrl;         // Irrigation Pump Controller  (tank → valves)
 CommManager     commMgr;        // The only communication object in this file
 
 #if ENABLE_DISPLAY
@@ -134,9 +138,45 @@ void setup() {
   // Register the node command callback so user "NODE x cmd" reaches hardware
   commMgr.setNodeCommandCallback(handleNodeCommand);
 
+  // Register pump command handler for WSP/IPC commands from any channel
+  commMgr.getUserComm()->setPumpCommandCallback(
+    [](const String &raw) -> CommandResult {
+      String up = raw; up.trim(); up.toUpperCase();
+      // WSP commands
+      if (up == "WSP ON")     { wspCtrl.setMode(PumpMode::MANUAL); wspCtrl.start("cmd"); return CommandResult(true,  "WSP", wspCtrl.statusString()); }
+      if (up == "WSP OFF")    { wspCtrl.stop("cmd");               return CommandResult(true,  "WSP", wspCtrl.statusString()); }
+      if (up == "WSP AUTO")   { wspCtrl.setMode(PumpMode::AUTO);   return CommandResult(true,  "WSP", "Well pump → AUTO mode"); }
+      if (up == "WSP STATUS") {                                    return CommandResult(true,  "WSP", wspCtrl.statusString()); }
+      // IPC commands
+      if (up == "IPC ON")     { ipcCtrl.setMode(PumpMode::MANUAL); ipcCtrl.start("cmd"); return CommandResult(true,  "IPC", ipcCtrl.statusString()); }
+      if (up == "IPC OFF")    { ipcCtrl.stop("cmd");               return CommandResult(true,  "IPC", ipcCtrl.statusString()); }
+      if (up == "IPC STATUS") {                                    return CommandResult(true,  "IPC", ipcCtrl.statusString()); }
+      // Combined status
+      if (up == "PUMP STATUS") {
+        return CommandResult(true, "PUMP", wspCtrl.statusString() + " | " + ipcCtrl.statusString());
+      }
+      return CommandResult(false, "PUMP", "Unknown pump command. Use: WSP ON|OFF|AUTO|STATUS  IPC ON|OFF|STATUS");
+    });
+
   // ScheduleManager needs userComm access for sending notifications.
   // CommManager exposes a thin pointer for this purpose.
-  scheduleMgr.init(commMgr.getUserComm(), commMgr.getNodeComm());
+  scheduleMgr.init(commMgr.getUserComm(), commMgr.getNodeComm(), &ipcCtrl);
+
+  // ── Pump controllers ──────────────────────────────────────────────────
+  wspCtrl.begin();
+  wspCtrl.setAlertCallback([](const String &m, const String &s) {
+    commMgr.sendAlert(m, s); });
+#if WSP_TANK_EMPTY_PIN > 0
+  wspCtrl.setTankEmptyCallback([] { return digitalRead(WSP_TANK_EMPTY_PIN) == LOW; });
+#endif
+#if WSP_TANK_FULL_PIN > 0
+  wspCtrl.setTankFullCallback ([] { return digitalRead(WSP_TANK_FULL_PIN)  == HIGH; });
+#endif
+
+  ipcCtrl.begin();
+  ipcCtrl.setMinOpenValves(IPC_MIN_OPEN_VALVES);
+  ipcCtrl.setAlertCallback([](const String &m, const String &s) {
+    commMgr.sendAlert(m, s); });
 
   Serial.println("\n==========================================");
   Serial.println("✓ SYSTEM READY");
@@ -154,6 +194,8 @@ void loop() {
   //   • WiFi reconnect
   //   • Inbound queue drain
   commMgr.process();
+  wspCtrl.process();
+  ipcCtrl.process();
 
   // ── Periodic health check (every 60 s) ───────────────────────────────────
   static unsigned long lastHealth = 0;

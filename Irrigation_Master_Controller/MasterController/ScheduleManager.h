@@ -6,8 +6,9 @@
 #include "Config.h"
 #include "NodeCommunication.h"
 
-// Forward declaration of UserCommunication
+// Forward declarations
 class UserCommunication;
+class IPController;
 
 // Note: SeqStep and Schedule are already defined in Config.h
 // Don't redefine them here - just use them
@@ -28,6 +29,12 @@ private:
   // Pointer to NodeCommunication for valve commands
   NodeCommunication* nodeComm;
 
+  // Pointer to Irrigation Pump Controller — for valve guard integration
+  IPController* ipCtrl;
+
+  // Count of currently open valves (reported to IPController)
+  int openValveCount = 0;
+
 public:
   ScheduleManager();
 
@@ -35,12 +42,21 @@ public:
    * Initialize with UserCommunication pointer
    * Must be called in setup() after UserComm is created
    */
-  void init(UserCommunication* comm, NodeCommunication* nodeComm = nullptr);
+  void init(UserCommunication* comm, NodeCommunication* nodeComm = nullptr,
+            IPController* ipCtrl = nullptr);
 
   /**
-   * Control pump
+   * Irrigation pump control — delegates to IPController with valve guard
    */
-  void setPump(bool on);
+  bool startIrrigationPump(const String &reason = "schedule");
+  void stopIrrigationPump (const String &reason = "schedule");
+
+  /**
+   * Report valve state changes so IPController can enforce the valve guard
+   */
+  void valveOpened();
+  void valveClosed();
+  void setOpenValveCount(int n);
 
   /**
    * Send command to open a node
