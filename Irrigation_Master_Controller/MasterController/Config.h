@@ -92,19 +92,56 @@
 #define MODEM_PWRKEY 4
 #define MODEM_RESET  15
 
-// ── Irrigation Pump Controller (IPC) — drives irrigation pump ───────────
-#define PUMP_PIN         25    // legacy alias — same as IPC_PIN
-#define PUMP_ACTIVE_HIGH true  // legacy alias — same as IPC_ACTIVE_HIGH
-#define IPC_PIN          25    // Irrigation Pump Control output pin
-#define IPC_ACTIVE_HIGH  true  // HIGH = pump ON
+// ── Heltec WiFi LoRa 32 V3 (ESP32-S3) — GPIO allocation for pump relays ──
+//
+// RESERVED by onboard hardware (do NOT use):
+//   LoRa SX1262 : 8 9 10 11 12 13 14
+//   OLED I2C    : 17 18 21
+//   USB         : 19 20
+//   Battery/ADC : 1 36 37
+//   Onboard LED : 35
+//   Boot button : 0
+//   Modem EC200U: 4 15 45 46
+//   RTC DS3231  : 41 42
+//   Strapping   : 0 3 45 46
+//   NOT on S3   : 25-34  ← these are ESP32 original only, absent on S3!
+//
+// FREE GPIO for relay outputs: 5 6 7 38 39 40 47 48
+//
+// Pump relay assignments (connect relay IN pin → these GPIO):
+//   G1 IPC  (Irrigation Pump group 1)  → GPIO 5
+//   G2 IPC  (Irrigation Pump group 2)  → GPIO 6
+//   W1 WSP  (Well pump 1)              → GPIO 7
+//   W2 WSP  (Well pump 2)              → GPIO 38
+//   W3 WSP  (Well pump 3)              → GPIO 39
+//
+// Tank sensors (W1 example — adjust per installation):
+//   W1 TANK EMPTY                      → GPIO 40  (active LOW)
+//   W1 TANK FULL                       → GPIO 47  (active HIGH)
+//
+// All relays: ACTIVE_HIGH = true (relay IN HIGH → pump ON)
+// Use optocoupler relay modules; do NOT drive pump directly from GPIO.
 
-// ── Water Source Pump Controller (WSPC) — drives well/borewell pump ──────
-#define WSP_PIN          26    // Water Source Pump Control output pin
-#define WSP_ACTIVE_HIGH  true  // HIGH = pump ON
+// ── Irrigation Pump Controller (IPC) relay pins ──────────────────────────
+#define PUMP_PIN         5     // legacy alias — same as IPC_PIN (G1)
+#define PUMP_ACTIVE_HIGH true
+#define IPC_PIN          5     // G1 — Irrigation group 1 relay → GPIO 5
+#define IPC_ACTIVE_HIGH  true
+#define IPC2_PIN         6     // G2 — Irrigation group 2 relay → GPIO 6
+#define IPC2_ACTIVE_HIGH true
 
-// ── WSPC Tank sensor pins (optional — 0 = not used) ─────────────────────
-#define WSP_TANK_EMPTY_PIN    0   // LOW = tank empty (needs filling)
-#define WSP_TANK_FULL_PIN     0   // HIGH = tank full / overflow
+// ── Water Source Pump Controller (WSPC) relay pins ───────────────────────
+#define WSP_PIN          7     // W1 — Well pump 1 relay → GPIO 7
+#define WSP_ACTIVE_HIGH  true
+#define WSP2_PIN         38    // W2 — Well pump 2 relay → GPIO 38
+#define WSP2_ACTIVE_HIGH true
+#define WSP3_PIN         39    // W3 — Well pump 3 relay → GPIO 39
+#define WSP3_ACTIVE_HIGH true
+
+// ── Tank level sensor pins (W1 — set 0 to disable) ───────────────────────
+#define WSP_TANK_EMPTY_PIN    40   // W1 tank empty → GPIO 40 (LOW = empty)
+#define WSP_TANK_FULL_PIN     47   // W1 tank full  → GPIO 47 (HIGH = full)
+// W2/W3 sensors: add WSP2_TANK_EMPTY_PIN etc. as needed
 
 // ── IPC node and valve limits ─────────────────────────────────────────────
 #define IPC_MIN_NODES         1    // Minimum nodes supported

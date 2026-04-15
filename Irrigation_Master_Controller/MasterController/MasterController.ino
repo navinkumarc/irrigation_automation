@@ -53,14 +53,14 @@ Preferences     prefs;
 StorageManager  storage;
 TimeManager     timeManager;
 ScheduleManager scheduleMgr;
-// Well pumps W1/W2/W3 (add pins for W2/W3 in Config.h as needed)
-WSPController   wspCtrl;         // W1 — Well pump 1  (pin WSP_PIN)
-// WSPController wspCtrl2("W2", WSP2_PIN); // W2 — uncomment when hardware present
-// WSPController wspCtrl3("W3", WSP3_PIN); // W3
+// Well pumps W1/W2/W3 — GPIO 7/38/39 on Heltec V3 (ESP32-S3)
+WSPController   wspCtrl ("W1", WSP_PIN,  WSP_ACTIVE_HIGH);  // W1 → GPIO 7
+WSPController   wspCtrl2("W2", WSP2_PIN, WSP2_ACTIVE_HIGH); // W2 → GPIO 38
+WSPController   wspCtrl3("W3", WSP3_PIN, WSP3_ACTIVE_HIGH); // W3 → GPIO 39
 
-// Irrigation groups G1/G2 (each has own pump + nodes)
-IPController    ipcCtrl;         // G1 — Irrigation group 1 (pin IPC_PIN)
-// IPController ipcCtrl2("G2", IPC2_PIN); // G2 — uncomment when hardware present
+// Irrigation groups G1/G2 — GPIO 5/6 on Heltec V3 (ESP32-S3)
+IPController    ipcCtrl ("G1", IPC_PIN,  IPC_ACTIVE_HIGH);  // G1 → GPIO 5
+IPController    ipcCtrl2("G2", IPC2_PIN, IPC2_ACTIVE_HIGH); // G2 → GPIO 6
 PumpScheduleManager pumpSched;   // Pump schedule manager
 IrrigationSequencer irrigSeq;    // Irrigation sequence engine
 CommManager     commMgr;        // The only communication object in this file
@@ -220,18 +220,33 @@ void setup() {
       String up = raw; up.trim(); up.toUpperCase();
       // WSP commands
       // W1/W2/W3 — well pump commands
-      if (up=="W1 ON"||up=="WSP ON")  { wspCtrl.setMode(PumpMode::MANUAL); wspCtrl.start("cmd"); return CommandResult(true,"W1",wspCtrl.statusString()); }
-      if (up=="W1 OFF"||up=="WSP OFF"){ wspCtrl.stop("cmd");               return CommandResult(true,"W1",wspCtrl.statusString()); }
-      if (up=="W1 AUTO"||up=="WSP AUTO"){ wspCtrl.setMode(PumpMode::AUTO); return CommandResult(true,"W1","W1→AUTO"); }
-      if (up=="W1 STATUS"||up=="WSP STATUS"){                               return CommandResult(true,"W1",wspCtrl.statusString()); }
+      if (up=="W1 ON")    { wspCtrl.setMode(PumpMode::MANUAL);  wspCtrl.start("cmd");  return CommandResult(true,"W1",wspCtrl.statusString()); }
+      if (up=="W1 OFF")   { wspCtrl.stop("cmd");                               return CommandResult(true,"W1",wspCtrl.statusString()); }
+      if (up=="W1 AUTO")  { wspCtrl.setMode(PumpMode::AUTO);                   return CommandResult(true,"W1","W1→AUTO"); }
+      if (up=="W1 STATUS"){                                                     return CommandResult(true,"W1",wspCtrl.statusString()); }
+      if (up=="W2 ON")    { wspCtrl2.setMode(PumpMode::MANUAL); wspCtrl2.start("cmd"); return CommandResult(true,"W2",wspCtrl2.statusString()); }
+      if (up=="W2 OFF")   { wspCtrl2.stop("cmd");                              return CommandResult(true,"W2",wspCtrl2.statusString()); }
+      if (up=="W2 AUTO")  { wspCtrl2.setMode(PumpMode::AUTO);                  return CommandResult(true,"W2","W2→AUTO"); }
+      if (up=="W2 STATUS"){                                                     return CommandResult(true,"W2",wspCtrl2.statusString()); }
+      if (up=="W3 ON")    { wspCtrl3.setMode(PumpMode::MANUAL); wspCtrl3.start("cmd"); return CommandResult(true,"W3",wspCtrl3.statusString()); }
+      if (up=="W3 OFF")   { wspCtrl3.stop("cmd");                              return CommandResult(true,"W3",wspCtrl3.statusString()); }
+      if (up=="W3 AUTO")  { wspCtrl3.setMode(PumpMode::AUTO);                  return CommandResult(true,"W3","W3→AUTO"); }
+      if (up=="W3 STATUS"){                                                     return CommandResult(true,"W3",wspCtrl3.statusString()); }
       // G1/G2 — irrigation pump commands
-      if (up=="G1 ON"||up=="IPC ON")  { ipcCtrl.setMode(PumpMode::MANUAL); ipcCtrl.start("cmd"); return CommandResult(true,"G1",ipcCtrl.statusString()); }
-      if (up=="G1 OFF"||up=="IPC OFF"){ ipcCtrl.stop("cmd");               return CommandResult(true,"G1",ipcCtrl.statusString()); }
-      if (up=="G1 STATUS"||up=="IPC STATUS"){                               return CommandResult(true,"G1",ipcCtrl.statusString()); }
+      if (up=="G1 ON")    { ipcCtrl.setMode(PumpMode::MANUAL);  ipcCtrl.start("cmd");  return CommandResult(true,"G1",ipcCtrl.statusString()); }
+      if (up=="G1 OFF")   { ipcCtrl.stop("cmd");                               return CommandResult(true,"G1",ipcCtrl.statusString()); }
+      if (up=="G1 STATUS"){                                                     return CommandResult(true,"G1",ipcCtrl.statusString()); }
+      if (up=="G2 ON")    { ipcCtrl2.setMode(PumpMode::MANUAL); ipcCtrl2.start("cmd"); return CommandResult(true,"G2",ipcCtrl2.statusString()); }
+      if (up=="G2 OFF")   { ipcCtrl2.stop("cmd");                              return CommandResult(true,"G2",ipcCtrl2.statusString()); }
+      if (up=="G2 STATUS"){                                                     return CommandResult(true,"G2",ipcCtrl2.statusString()); }
       // Combined status
       if (up == "PUMP STATUS") {
         return CommandResult(true, "PUMP",
-          String("W1:") + wspCtrl.statusString() + " | G1:" + ipcCtrl.statusString());
+          String("W1:") + wspCtrl.statusString()  + "\n"
+        + "W2:" + wspCtrl2.statusString() + "\n"
+        + "W3:" + wspCtrl3.statusString()  + "\n"
+        + "G1:" + ipcCtrl.statusString()   + "\n"
+        + "G2:" + ipcCtrl2.statusString());
       }
       // Pump schedule commands
       // Short pump schedule commands: WSCH W1/G1..., DEL W1:id, DIS, ENA, PS LIST/STATUS
@@ -255,20 +270,30 @@ void setup() {
   scheduleMgr.init(commMgr.getUserComm(), commMgr.getNodeComm(), &ipcCtrl, &irrigSeq);
 
   // ── Pump controllers ──────────────────────────────────────────────────
+  // ── W1 ──────────────────────────────────────────────────────────────
   wspCtrl.begin();
-  wspCtrl.setAlertCallback([](const String &m, const String &s) {
-    commMgr.sendAlert(m, s); });
+  wspCtrl.setAlertCallback([](const String &m, const String &s) { commMgr.sendAlert(m, s); });
 #if WSP_TANK_EMPTY_PIN > 0
   wspCtrl.setTankEmptyCallback([] { return digitalRead(WSP_TANK_EMPTY_PIN) == LOW; });
 #endif
 #if WSP_TANK_FULL_PIN > 0
   wspCtrl.setTankFullCallback ([] { return digitalRead(WSP_TANK_FULL_PIN)  == HIGH; });
 #endif
+  // ── W2 ──────────────────────────────────────────────────────────────
+  wspCtrl2.begin();
+  wspCtrl2.setAlertCallback([](const String &m, const String &s) { commMgr.sendAlert(m, s); });
+  // ── W3 ──────────────────────────────────────────────────────────────
+  wspCtrl3.begin();
+  wspCtrl3.setAlertCallback([](const String &m, const String &s) { commMgr.sendAlert(m, s); });
 
+  // ── G1 ──────────────────────────────────────────────────────────────
   ipcCtrl.begin();
   ipcCtrl.setMinOpenValves(IPC_MIN_OPEN_VALVES);
-  ipcCtrl.setAlertCallback([](const String &m, const String &s) {
-    commMgr.sendAlert(m, s); });
+  ipcCtrl.setAlertCallback([](const String &m, const String &s) { commMgr.sendAlert(m, s); });
+  // ── G2 ──────────────────────────────────────────────────────────────
+  ipcCtrl2.begin();
+  ipcCtrl2.setMinOpenValves(IPC_MIN_OPEN_VALVES);
+  ipcCtrl2.setAlertCallback([](const String &m, const String &s) { commMgr.sendAlert(m, s); });
 
   irrigSeq.init(commMgr.getNodeComm(), &ipcCtrl, commMgr.getUserComm());
   irrigSeq.setMinOpenValves(IPC_MIN_OPEN_VALVES);
@@ -297,8 +322,8 @@ void loop() {
   //   • WiFi reconnect
   //   • Inbound queue drain
   commMgr.process();
-  wspCtrl.process();
-  ipcCtrl.process();
+  wspCtrl.process();  wspCtrl2.process();  wspCtrl3.process();
+  ipcCtrl.process();  ipcCtrl2.process();
   scheduleMgr.process();   // drives IrrigationSequencer + startIfDue
   pumpSched.process();
 
