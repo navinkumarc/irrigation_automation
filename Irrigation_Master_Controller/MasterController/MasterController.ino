@@ -270,21 +270,43 @@ void setup() {
   scheduleMgr.init(commMgr.getUserComm(), commMgr.getNodeComm(), &ipcCtrl, &irrigSeq);
 
   // ── Pump controllers ──────────────────────────────────────────────────
-  // ── W1 ──────────────────────────────────────────────────────────────
+  // ── W1 ─────────────────────────────────────────────────────────────────
   wspCtrl.begin();
   wspCtrl.setAlertCallback([](const String &m, const String &s) { commMgr.sendAlert(m, s); });
 #if WSP_TANK_EMPTY_PIN > 0
+  pinMode(WSP_TANK_EMPTY_PIN, INPUT_PULLUP);
+  // NC float switch: LOW = float open = tank empty
   wspCtrl.setTankEmptyCallback([] { return digitalRead(WSP_TANK_EMPTY_PIN) == LOW; });
 #endif
 #if WSP_TANK_FULL_PIN > 0
-  wspCtrl.setTankFullCallback ([] { return digitalRead(WSP_TANK_FULL_PIN)  == HIGH; });
+  pinMode(WSP_TANK_FULL_PIN, INPUT_PULLUP);
+  // NC float switch: LOW = float open = tank full (upper float triggers)
+  wspCtrl.setTankFullCallback ([] { return digitalRead(WSP_TANK_FULL_PIN)  == LOW; });
 #endif
-  // ── W2 ──────────────────────────────────────────────────────────────
+
+  // ── W2 ─────────────────────────────────────────────────────────────────
   wspCtrl2.begin();
   wspCtrl2.setAlertCallback([](const String &m, const String &s) { commMgr.sendAlert(m, s); });
-  // ── W3 ──────────────────────────────────────────────────────────────
+#if WSP2_TANK_EMPTY_PIN > 0
+  pinMode(WSP2_TANK_EMPTY_PIN, INPUT_PULLUP);
+  wspCtrl2.setTankEmptyCallback([] { return digitalRead(WSP2_TANK_EMPTY_PIN) == LOW; });
+#endif
+#if WSP2_TANK_FULL_PIN > 0
+  pinMode(WSP2_TANK_FULL_PIN, INPUT_PULLUP);
+  wspCtrl2.setTankFullCallback ([] { return digitalRead(WSP2_TANK_FULL_PIN)  == LOW; });
+#endif
+
+  // ── W3 ─────────────────────────────────────────────────────────────────
   wspCtrl3.begin();
   wspCtrl3.setAlertCallback([](const String &m, const String &s) { commMgr.sendAlert(m, s); });
+#if WSP3_TANK_EMPTY_PIN > 0
+  pinMode(WSP3_TANK_EMPTY_PIN, INPUT_PULLUP);
+  wspCtrl3.setTankEmptyCallback([] { return digitalRead(WSP3_TANK_EMPTY_PIN) == LOW; });
+#endif
+#if WSP3_TANK_FULL_PIN > 0
+  pinMode(WSP3_TANK_FULL_PIN, INPUT_PULLUP);
+  wspCtrl3.setTankFullCallback ([] { return digitalRead(WSP3_TANK_FULL_PIN)  == LOW; });
+#endif
 
   // ── G1 ──────────────────────────────────────────────────────────────
   ipcCtrl.begin();

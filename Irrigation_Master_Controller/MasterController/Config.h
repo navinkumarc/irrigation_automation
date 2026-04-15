@@ -138,10 +138,30 @@
 #define WSP3_PIN         39    // W3 — Well pump 3 relay → GPIO 39
 #define WSP3_ACTIVE_HIGH true
 
-// ── Tank level sensor pins (W1 — set 0 to disable) ───────────────────────
-#define WSP_TANK_EMPTY_PIN    40   // W1 tank empty → GPIO 40 (LOW = empty)
-#define WSP_TANK_FULL_PIN     47   // W1 tank full  → GPIO 47 (HIGH = full)
-// W2/W3 sensors: add WSP2_TANK_EMPTY_PIN etc. as needed
+// ── Tank level sensor pins ─────────────────────────────────────────────────
+// Sensor type: float switch or conductive probe.
+// EMPTY sensor: NC (Normally Closed) float — opens when water drops below probe.
+//   Wire: GPIO → 10kΩ pull-up to 3.3V → sensor → GND
+//   Logic: LOW = tank empty (sensor open, pull-up reading low? No —
+//          use INPUT_PULLUP, sensor pulls to GND when submerged = HIGH = full)
+//
+// Recommended wiring for float switch (NC type):
+//   EMPTY: GPIO + INPUT_PULLUP; float NC→GND; LOW = switch open = tank empty
+//   FULL:  GPIO + INPUT_PULLUP; float NC→GND; LOW = switch closed = tank full
+//
+// Set pin to 0 to disable that sensor (runs without it in MANUAL/SCHEDULE mode).
+
+// W1 sensors → GPIO 40 (empty) and GPIO 47 (full)
+#define WSP_TANK_EMPTY_PIN    40   // W1 tank empty → GPIO 40 (INPUT_PULLUP, LOW=empty)
+#define WSP_TANK_FULL_PIN     47   // W1 tank full  → GPIO 47 (INPUT_PULLUP, LOW=full)
+
+// W2 sensors → GPIO 16 (empty) and GPIO 22 (full)
+#define WSP2_TANK_EMPTY_PIN   16   // W2 tank empty → GPIO 16
+#define WSP2_TANK_FULL_PIN    22   // W2 tank full  → GPIO 22
+
+// W3 sensors → GPIO 23 (empty) and GPIO 24 (full)
+#define WSP3_TANK_EMPTY_PIN   23   // W3 tank empty → GPIO 23
+#define WSP3_TANK_FULL_PIN    24   // W3 tank full  → GPIO 24
 
 // ── IPC node and valve limits ─────────────────────────────────────────────
 #define IPC_MIN_NODES         1    // Minimum nodes supported
