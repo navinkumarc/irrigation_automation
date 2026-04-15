@@ -109,6 +109,8 @@ CommandResult UserCommunication::dispatchCommand(const String &raw,
   if (cmd == "STATS")            return handleStatsCommand();
   if (cmd.startsWith("START "))  return handleStartCommand(raw.substring(6));
   if (cmd.startsWith("NODE "))   return handleNodeCommand(raw.substring(5));
+  if (cmd.startsWith("ADD SCHED") || cmd.startsWith("DEL SCHED"))
+    return handleScheduleCommand(raw);
   if (cmd == "RESTART" || cmd == "REBOOT") {
     sendAlert(MsgFmt::alertWarning("Controller restarting now..."), SEV_WARNING);
     delay(500); ESP.restart();
@@ -183,6 +185,12 @@ CommandResult UserCommunication::handleStatsCommand() {
               + String(ESP.getHeapSize() / 1024) + "KB total"
               + " | Uptime: " + String(millis() / 1000) + "s";
   return CommandResult(true, "STATS", resp);
+}
+
+// ─── handleScheduleCommand() ─────────────────────────────────────────────────
+CommandResult UserCommunication::handleScheduleCommand(const String &raw) {
+  if (scheduleCommandCallback) return scheduleCommandCallback(raw);
+  return CommandResult(false, "SCHED", "Schedule command handler not configured");
 }
 
 // ─── handlePumpCommand() ────────────────────────────────────────────────────
@@ -308,7 +316,9 @@ String UserCommunication::getHelpText() const {
     "Commands:\n"
     "  STATUS           — channel & schedule status\n"
     "  SCHEDULES        — list schedules\n"
-    "  START <id>       — start schedule\n"
+    "  ADD SCHED <compact> — add irrigation schedule\n"
+    "  DEL SCHED <id>      — delete schedule\n"
+    "  START <id>       — start schedule now\n"
     "  STOP             — stop all schedules\n"
     "  NODE <id> <cmd>  — send command to node\n"
     "  STATS            — memory & uptime\n"

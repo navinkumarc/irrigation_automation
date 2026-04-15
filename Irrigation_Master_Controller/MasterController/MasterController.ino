@@ -142,6 +142,66 @@ void setup() {
   // Register the node command callback so user "NODE x cmd" reaches hardware
   commMgr.setNodeCommandCallback(handleNodeCommand);
 
+  // Schedule ADD/DEL command handler
+  commMgr.getUserComm()->setScheduleCommandCallback(
+    [](const String &raw) -> CommandResult {
+      String up = raw; up.trim(); up.toUpperCase();
+
+      // DEL SCHED <id>
+      if (up.startsWith("DEL SCHED ")) {
+        String id = raw.substring(10); id.trim();
+        if (storage.deleteSchedule(id)) {
+          // Remove from in-memory list
+          schedules.erase(std::remove_if(schedules.begin(), schedules.end(),
+            [&id](const Schedule &s){ return s.id == id; }), schedules.end());
+          return CommandResult(true, "SCHED", "Deleted: " + id);
+        }
+        return CommandResult(false, "SCHED", "Not found: " + id);
+      }
+
+      // ADD SCHED <compact>
+      if (up.startsWith("ADD SCHED ")) {
+        String compact = raw.substring(10); compact.trim();
+        Schedule s;
+        if (!scheduleMgr.parseCompact(compact, s))
+          return CommandResult(false, "SCHED", "Parse error in compact format");
+        if (s.id.length() == 0)
+          return CommandResult(false, "SCHED", "Missing ID= field");
+        if (s.seq.empty())
+          return CommandResult(false, "SCHED", "Missing SEQ= field");
+        // Compute next_run from timeStr + rec
+        if (s.timeStr.length() > 0) {
+          int hour = 0, min = 0;
+          if (parseTimeHHMM(s.timeStr, hour, min)) {
+            time_t now = time(nullptr);
+            if (s.rec == 'W') {
+              s.next_run_epoch = nextWeekdayOccurrence(now, s.weekday_mask, hour, min);
+            } else if (s.rec == 'D') {
+              struct tm t; localtime_r(&now, &t);
+              t.tm_hour = hour; t.tm_min = min; t.tm_sec = 0;
+              time_t candidate = mktime(&t);
+              s.next_run_epoch = (candidate > now) ? candidate : candidate + 86400;
+            } else {
+              struct tm t; localtime_r(&now, &t);
+              t.tm_hour = hour; t.tm_min = min; t.tm_sec = 0;
+              time_t candidate = mktime(&t);
+              s.next_run_epoch = (candidate > now) ? candidate : candidate + 86400;
+            }
+          }
+        }
+        s.enabled = true;
+        storage.saveSchedule(s);
+        schedules.push_back(s);
+        String resp = "Added " + s.id + " rec:" + String(s.rec)
+                    + " time:" + s.timeStr
+                    + " steps:" + String(s.seq.size());
+        return CommandResult(true, "SCHED", resp);
+      }
+
+      return CommandResult(false, "SCHED",
+        "Usage: ADD SCHED <compact>  |  DEL SCHED <id>");
+    });
+
   // Register pump command handler for WSP/IPC commands from any channel
   commMgr.getUserComm()->setPumpCommandCallback(
     [](const String &raw) -> CommandResult {

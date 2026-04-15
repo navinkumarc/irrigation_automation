@@ -94,6 +94,9 @@ private:
   // Callback for WSP/IPC/PUMP commands — wired from MasterController.ino
   std::function<CommandResult(const String&)> pumpCommandCallback;
 
+  // Callback for schedule ADD/DEL commands
+  std::function<CommandResult(const String&)> scheduleCommandCallback;
+
   // Admin phone — used by SMS adapter for direct replies
   String adminPhone;
 
@@ -107,6 +110,7 @@ private:
   CommandResult handleNodeCommand      (const String &args);
   CommandResult handleHelpCommand      ();
   CommandResult handlePumpCommand      (const String &raw);
+  CommandResult handleScheduleCommand  (const String &raw);
   CommandResult handleStatsCommand     ();
 
   CommandResult dispatchCommand(const String &cmd,
@@ -142,6 +146,8 @@ public:
   void setNodeCommandCallback(NodeCommandCallback cb);
   void setPumpCommandCallback(std::function<CommandResult(const String&)> cb)
     { pumpCommandCallback = cb; }
+  void setScheduleCommandCallback(std::function<CommandResult(const String&)> cb)
+    { scheduleCommandCallback = cb; }
 
   // ── Inbound — called by CommManager channel pollers ──────────────────────
 

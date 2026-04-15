@@ -73,8 +73,9 @@ bool StorageManager::saveSchedule(const Schedule &s) {
   JsonArray arr = doc.createNestedArray("sequence");
   for (auto &st : s.seq) {
     JsonObject so = arr.createNestedObject();
-    so["node_id"] = st.node_id;
-    so["duration_ms"] = st.duration_ms;
+    so["node_id"]    = st.node_id;
+    so["valve_id"]   = st.valve_id;
+    so["duration_ms"]= st.duration_ms;
   }
   
   String output;
@@ -129,8 +130,9 @@ Schedule StorageManager::scheduleFromJson(const String &json) {
   if (doc.containsKey("sequence") && doc["sequence"].is<JsonArray>()) {
     for (JsonVariant v : doc["sequence"].as<JsonArray>()) {
       SeqStep st;
-      st.node_id = v["node_id"].as<int>();
-      st.duration_ms = v["duration_ms"].as<uint32_t>();
+      st.node_id    = v["node_id"].as<int>();
+      st.valve_id   = v["valve_id"].as<int>();
+      st.duration_ms= v["duration_ms"].as<uint32_t>();
       s.seq.push_back(st);
     }
   }
