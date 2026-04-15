@@ -186,7 +186,7 @@ bool CommManager::initNodeCommunication() {
       case NodeMessageType::AUTO_CLOSE:
         alert = MsgFmt::alertAutoClose(nm.nodeId, nm.reason);
         // Notify IrrigationSequencer so it can update valve state
-        if (onAutoCloseCallback) onAutoCloseCallback(nm.nodeId, nm.reason);
+        if (_onAutoCloseCallback) _onAutoCloseCallback(nm.nodeId, nm.reason);
         break;
       default:
         alert = MsgFmt::alertWarning("Unknown message from node " + String(nm.nodeId));
@@ -567,8 +567,12 @@ UserCommunication* CommManager::getUserComm() {
   return initialized ? &userComm : nullptr;
 }
 
+SerialConfigHandler* CommManager::getSerialCfgHandler() {
+  return serialCfgHandler;
+}
+
 void CommManager::setAutoCloseCallback(std::function<void(int,const String&)> cb) {
-  onAutoCloseCallback = cb;
+  _onAutoCloseCallback = cb;
 }
 
 NodeCommunication* CommManager::getNodeComm() {

@@ -132,11 +132,13 @@ String applyIrrConfig(const IrrGroupConfig &cfg) {
   else return "Unknown IRR pump: " + cfg.pumpId;
 
   ipc->setMinOpenValves(cfg.minValves);
-  irrigSeq.setMaxNodes(cfg.maxNodes);
-  irrigSeq.setMaxValvesPerNode(cfg.maxValves);
   irrigSeq.setMinOpenValves(cfg.minValves);
+  // Apply node/valve limits from Config.h defaults
+  irrigSeq.setMaxNodes(IPC_MAX_NODES);
+  irrigSeq.setMaxValvesPerNode(IPC_MAX_VALVES_PER_NODE);
   return "IRR " + cfg.id + " active: pump=" + cfg.pumpId
-         + " nodes=" + cfg.maxNodes + " valves=" + cfg.maxValves;
+         + " nodes=" + String(cfg.nodeCount)
+         + " minValves=" + String(cfg.minValves);
 }
 
 // ─── setupShowAll() — list configured groups ──────────────────────────────────
@@ -249,9 +251,10 @@ void setup() {
 
       // ADD SCHED <compact>
       if (up.startsWith("ISCH ")) {
-        String compact = raw.substring(7); compact.trim();
-        // ISCH is identical to ADD SCHED — falls through to same logic
-        return scheduleCommandCallback(compact);
+        // Route through UserCommunication schedule command handler
+        String fwd = "ADD SCHED " + raw.substring(5);
+        return commMgr.getUserComm()->dispatchCommand(
+          fwd, &scheduleRunning, &scheduleLoaded, commMgr.getStatus());
       }
       if (up.startsWith("ADD SCHED ")) {
         String compact = raw.substring(10); compact.trim();
@@ -395,10 +398,12 @@ void setup() {
   });
 
   // ── Register Serial setup callbacks ─────────────────────────────────────
-  serialCfgHandler.setWTTSetupCallback ([](const WTTGroupConfig &cfg) { return applyWTTConfig(cfg); });
-  serialCfgHandler.setIrrSetupCallback ([](const IrrGroupConfig  &cfg) { return applyIrrConfig(cfg); });
-  serialCfgHandler.setSetupDelCallback ([](const String &id)            { return String("Removed: ") + id; });
-  serialCfgHandler.setSetupShowCallback([]()                             { return setupShowAll(); });
+  if (auto *sch = commMgr.getSerialCfgHandler()) {
+    sch->setWTTSetupCallback ([](const WTTGroupConfig &cfg) { return applyWTTConfig(cfg); });
+    sch->setIrrSetupCallback ([](const IrrGroupConfig  &cfg) { return applyIrrConfig(cfg); });
+    sch->setSetupDelCallback ([](const String &id)            { return String("Removed: ") + id; });
+    sch->setSetupShowCallback([]()                             { return setupShowAll(); });
+  }
 
   // ── Load and apply saved process configs ─────────────────────────────────
   {

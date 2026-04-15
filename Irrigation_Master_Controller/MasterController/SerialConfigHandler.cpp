@@ -230,7 +230,8 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
     String params = body.substring(5); params.trim();
 
     // SETUP NODE DEL <groupId>,N:<node>
-    if (params.toUpperCase().startsWith("DEL ")) {
+    { String _pu = params; _pu.toUpperCase();
+    if (_pu.startsWith("DEL ")) {
       String rest = params.substring(4); rest.trim();
       int cm = rest.indexOf(',');
       String gid = (cm > 0) ? rest.substring(0, cm) : rest;
@@ -250,7 +251,7 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
         Serial.println("[Setup] Usage: SETUP NODE DEL <id>,N:<node>");
       }
       return true;
-    }
+    } }
 
     // Parse: <groupId>,N:<node>,V:<v1>,<v2>,...
     // Example: IG1,N:1,V:2,3   or   IG1,N:2,V:4

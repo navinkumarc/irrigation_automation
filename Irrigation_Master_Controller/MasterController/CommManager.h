@@ -184,6 +184,9 @@ private:
   bool initNodeCommunication();
   bool initUserCommunication();
 
+  // AUTO_CLOSE callback — set from MasterController via setAutoCloseCallback()
+  std::function<void(int,const String&)> _onAutoCloseCallback;
+
   // ── Inbound channel pollers — called from process() ───────────────────────
   void pollSMS();
   void pollMQTT();
@@ -257,6 +260,9 @@ public:
   NodeCommunication* getNodeComm();
   // Register callback for node AUTO_CLOSE events → IrrigationSequencer
   void setAutoCloseCallback(std::function<void(int,const String&)> cb);
+
+  // Accessor for SerialConfigHandler (for setup callbacks)
+  SerialConfigHandler* getSerialCfgHandler();
 };
 
 // ─── Global instance ──────────────────────────────────────────────────────────

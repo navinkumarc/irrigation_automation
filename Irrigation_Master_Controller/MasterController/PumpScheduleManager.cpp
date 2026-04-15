@@ -369,7 +369,7 @@ void PumpScheduleManager::loadSchedules() {
         s.id           = doc["id"]       | "";
         s.pumpId       = doc["pump"]      | "";
         s.target       = (PumpTarget)(doc["target"] | 1);
-        s.rec          = doc["rec"]       | "O";
+        { String r = doc["rec"] | "O"; s.rec = r.length() ? r.charAt(0) : 'O'; }
         s.timeStr      = doc["time"]      | "";
         s.durationMs   = doc["duration"]  | 0;
         s.weekday_mask = doc["weekdays"]  | 0;
