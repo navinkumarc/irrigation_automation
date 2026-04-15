@@ -223,9 +223,9 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
     return true;
   }
 
-  // ── SETUP NODE <groupId>,N:<node>,V:<v1>,<v2>... ──────────────────────
-  // Add a node and its participating valves to an irrigation group.
-  // Run before SETUP IRR to define node membership.
+  // ── SETUP NODE <irrGroupId>,N:<node>,V:<v1>,<v2>... ────────────────────
+  // Add a node and its valves to an existing irrigation group.
+  // The group must already exist (SETUP IRR must be run first).
   if (body.startsWith("NODE ")) {
     String params = body.substring(5); params.trim();
 
@@ -240,6 +240,10 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
         if (npart.startsWith("N:")) nid = (uint8_t)npart.substring(2).toInt();
       }
       if (gid.length() && nid > 0) {
+        if (!_storage.fileExists("/process/irr_" + gid + ".json")) {
+          Serial.println("[Setup] ❌ Group '" + gid + "' not found.");
+          return true;
+        }
         _storage.deleteIrrNode(gid, nid);
         Serial.println("[Setup] ✓ Removed node " + String(nid) + " from " + gid);
       } else {
@@ -292,9 +296,16 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
       Serial.println("[Setup] ❌ Node must be 1-15"); return true;
     }
 
+    // ── Validate group exists before adding nodes ─────────────────────
+    if (!_storage.fileExists("/process/irr_" + groupId + ".json")) {
+      Serial.println("[Setup] ❌ Group '" + groupId + "' not found.");
+      Serial.println("[Setup]    Create it first: SETUP IRR ID:" + groupId + ",G:G1");
+      return true;
+    }
+
     // Load existing nodes, update/add this node, save
     IrrGroupConfig tmp; tmp.id = groupId;
-    _storage.loadIrrNodes(groupId, tmp);  // ok if not found yet
+    _storage.loadIrrNodes(groupId, tmp);  // load existing nodes (may be empty)
     IrrNodeEntry *existing = tmp.findNode(nodeId);
     if (existing) {
       // Replace valves
@@ -317,7 +328,9 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
   }
 
   // ── SETUP IRR ID:x,G:G1,M:1 ──────────────────────────────────────────
-  // Creates the irrigation group referencing previously defined nodes.
+  // Step 1: Creates the irrigation group (pump config).
+  // After this, use SETUP NODE <id>,N:x,V:y to add nodes.
+  // The group becomes available on all channels immediately after creation.
   if (body.startsWith("IRR ")) {
     String params = body.substring(4); params.trim();
     IrrGroupConfig cfg;
@@ -348,39 +361,25 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
       Serial.println("[Setup] ❌ G: must be G1 or G2"); return true;
     }
 
-    // Load node definitions
-    _storage.loadIrrNodes(cfg.id, cfg);
-    if (cfg.nodeCount == 0) {
-      Serial.println("[Setup] ⚠ No nodes defined yet. Use SETUP NODE first.");
-      Serial.println("[Setup]   Example: SETUP NODE " + cfg.id + ",N:1,V:1,2,3,4");
-    }
-
     cfg.configured = true;
     _storage.saveIrrConfig(cfg);
-
-    // Print node summary
-    Serial.println("[Setup] ✓ IRR group: " + cfg.id + " pump=" + cfg.pumpId
-                   + " minValves=" + cfg.minValves
-                   + " nodes=" + cfg.nodeCount);
-    for (int i = 0; i < cfg.nodeCount; i++) {
-      String vl;
-      for (int v = 0; v < cfg.nodes[i].valveCount; v++) {
-        if (v) vl += ",";
-        vl += cfg.nodes[i].valves[v];
-      }
-      Serial.println("[Setup]   Node " + String(cfg.nodes[i].nodeId) + " valves=[" + vl + "]");
-    }
     if (_onIrrSetup) Serial.println(_onIrrSetup(cfg));
-    Serial.println("[Setup] Group " + cfg.id + " is now available on all channels.");
+    Serial.println("[Setup] ✓ IRR group created: " + cfg.id
+                   + " pump=" + cfg.pumpId
+                   + " minValves=" + cfg.minValves);
+    Serial.println("[Setup] Now add nodes:");
+    Serial.println("[Setup]   SETUP NODE " + cfg.id + ",N:1,V:2,3");
+    Serial.println("[Setup]   SETUP NODE " + cfg.id + ",N:2,V:4");
+    Serial.println("[Setup] Group " + cfg.id + " is available on all channels.");
     return true;
   }
 
   Serial.println("[Setup] Unknown SETUP command.");
   Serial.println("[Setup] Commands:");
   Serial.println("[Setup]   SETUP WTT ID:FG1,W:W1,T:T1");
+  Serial.println("[Setup]   SETUP IRR  ID:IG1,G:G1,M:1");
   Serial.println("[Setup]   SETUP NODE IG1,N:1,V:2,3");
   Serial.println("[Setup]   SETUP NODE IG1,N:2,V:4");
-  Serial.println("[Setup]   SETUP IRR  ID:IG1,G:G1,M:1");
   Serial.println("[Setup]   SETUP SHOW");
   Serial.println("[Setup]   SETUP DEL <id>");
   return true;
@@ -432,9 +431,9 @@ void SerialConfigHandler::printHelp() const {
     "\n"
     "=== PROCESS GROUP SETUP (Serial only) ===\n"
     "SETUP WTT ID:<id>,W:W1|W2,T:T1|T2      Create WTT group\n"
+    "SETUP IRR  ID:<id>,G:G1|G2[,M:1]        Create irrigation group\n"
     "SETUP NODE <id>,N:<node>,V:<v1>,<v2>...  Add node+valves to group\n"
     "SETUP NODE DEL <id>,N:<node>             Remove node from group\n"
-    "SETUP IRR  ID:<id>,G:G1|G2[,M:1]        Create irrigation group\n"
     "SETUP SHOW                              List all groups\n"
     "SETUP DEL <id>                          Delete group config\n"
     "Note: ID is permanent. Use SETUP DEL + re-create to change.\n"
