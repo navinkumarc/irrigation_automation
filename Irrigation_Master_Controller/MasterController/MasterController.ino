@@ -54,12 +54,13 @@ StorageManager  storage;
 TimeManager     timeManager;
 ScheduleManager scheduleMgr;
 // Well pumps W1/W2/W3 — GPIO 7/38/39 on Heltec V3 (ESP32-S3)
-WSPController   wspCtrl ("W1", WSP_PIN,  WSP_ACTIVE_HIGH);  // W1 → J3-18 GPIO7
-WSPController   wspCtrl2("W2", WSP2_PIN, WSP2_ACTIVE_HIGH); // W2 → J3-14 GPIO3
+// J3 side: W1(relay=7, empty=6, full=5)  W2(relay=3, empty=2, full=38)
+WSPController   wspCtrl ("W1", WSP_PIN,  WSP_ACTIVE_HIGH);  // W1 relay → J3-18 GPIO7
+WSPController   wspCtrl2("W2", WSP2_PIN, WSP2_ACTIVE_HIGH); // W2 relay → J3-14 GPIO3
 
-// Irrigation groups G1/G2 — GPIO 5/6 on Heltec V3 (ESP32-S3)
-IPController    ipcCtrl ("G1", IPC_PIN,  IPC_ACTIVE_HIGH);  // G1 → GPIO 5
-IPController    ipcCtrl2("G2", IPC2_PIN, IPC2_ACTIVE_HIGH); // G2 → GPIO 6
+// J2 side: G1(relay=47)  G2(relay=48)
+IPController    ipcCtrl ("G1", IPC_PIN,  IPC_ACTIVE_HIGH);  // G1 relay → J2-13 GPIO47
+IPController    ipcCtrl2("G2", IPC2_PIN, IPC2_ACTIVE_HIGH); // G2 relay → J2-14 GPIO48
 PumpScheduleManager pumpSched;   // Pump schedule manager
 IrrigationSequencer irrigSeq;    // Irrigation sequence engine
 CommManager     commMgr;        // The only communication object in this file

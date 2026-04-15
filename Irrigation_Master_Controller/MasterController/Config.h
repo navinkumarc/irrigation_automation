@@ -139,28 +139,59 @@
 //  GPIO2  (J3-13)   GPIO26 (J2-15)
 //  GPIO33 (J2-12)   GPIO34 (J2-11)   GPIO38 (J3-11)
 
-// ── Irrigation Pump Controller (IPC) relay pins ───────────────────────────
-#define PUMP_PIN         5     // legacy alias — same as IPC_PIN
+// ── Pin assignments — grouped by function, sequential on same header side ──
+//
+//  J3 side (left header) — ALL well pump wiring here:
+//  ┌─────────┬────────┬───────────────────────────────────────┐
+//  │ J3 Pin  │ GPIO   │ Function                              │
+//  ├─────────┼────────┼───────────────────────────────────────┤
+//  │ J3-18   │ GPIO7  │ W1 well pump relay (OUTPUT)           │
+//  │ J3-17   │ GPIO6  │ W1 tank empty sensor (INPUT_PULLUP)   │
+//  │ J3-16   │ GPIO5  │ W1 tank full sensor  (INPUT_PULLUP)   │
+//  │ J3-15   │ GPIO4  │ ⚠ MODEM_PWRKEY — skip                │
+//  │ J3-14   │ GPIO3  │ W2 well pump relay (OUTPUT)           │
+//  │ J3-13   │ GPIO2  │ W2 tank empty sensor (INPUT_PULLUP)   │
+//  │ J3-12   │ GPIO1  │ ⚠ VBAT ADC — skip                    │
+//  │ J3-11   │ GPIO38 │ W2 tank full sensor  (INPUT_PULLUP)   │
+//  └─────────┴────────┴───────────────────────────────────────┘
+//
+//  J2 side (right header) — ALL irrigation pump wiring here:
+//  ┌─────────┬────────┬───────────────────────────────────────┐
+//  │ J2 Pin  │ GPIO   │ Function                              │
+//  ├─────────┼────────┼───────────────────────────────────────┤
+//  │ J2-13   │ GPIO47 │ G1 irrigation pump relay (OUTPUT)     │
+//  │ J2-14   │ GPIO48 │ G2 irrigation pump relay (OUTPUT)     │
+//  │ J2-15   │ GPIO26 │ spare                                 │
+//  │ J2-12   │ GPIO33 │ spare                                 │
+//  │ J2-11   │ GPIO34 │ spare                                 │
+//  └─────────┴────────┴───────────────────────────────────────┘
+//
+//  Also spare on J3: GPIO39 (J3-10), GPIO40 (J3-9)
+//
+// Sensor wiring (NC float switch):
+//   GPIO + INPUT_PULLUP → float switch NC → GND
+//   LOW = switch open = level condition met (empty or full)
+
+// ── Irrigation Pump Controller (IPC) — J2 side ────────────────────────────
+#define PUMP_PIN         47    // legacy alias — same as IPC_PIN
 #define PUMP_ACTIVE_HIGH true
-#define IPC_PIN          5     // G1 — Irrigation pump 1 → J3-16 GPIO5
+#define IPC_PIN          47    // G1 → J2-13 GPIO47
 #define IPC_ACTIVE_HIGH  true
-#define IPC2_PIN         6     // G2 — Irrigation pump 2 → J3-17 GPIO6
+#define IPC2_PIN         48    // G2 → J2-14 GPIO48
 #define IPC2_ACTIVE_HIGH true
 
-// ── Water Source Pump Controller (WSPC) relay pins ────────────────────────
-// Max 2 well pumps (W3 removed — only W1 and W2 needed)
-#define WSP_PIN          7     // W1 — Well pump 1 → J3-18 GPIO7
+// ── Water Source Pump Controller (WSPC) — J3 side ─────────────────────────
+#define WSP_PIN          7     // W1 relay    → J3-18 GPIO7
 #define WSP_ACTIVE_HIGH  true
-#define WSP2_PIN         3     // W2 — Well pump 2 → J3-14 GPIO3
+#define WSP2_PIN         3     // W2 relay    → J3-14 GPIO3
 #define WSP2_ACTIVE_HIGH true
 
-// ── Tank level sensor pins ────────────────────────────────────────────────
-// NC float switch + INPUT_PULLUP. LOW = switch open = level reached.
-// Set to 0 to disable (pump runs in MANUAL/SCHEDULE mode without sensors).
-#define WSP_TANK_EMPTY_PIN    47   // W1 tank empty → J2-13 GPIO47
-#define WSP_TANK_FULL_PIN     48   // W1 tank full  → J2-14 GPIO48
-#define WSP2_TANK_EMPTY_PIN   40   // W2 tank empty → J3-9  GPIO40
-#define WSP2_TANK_FULL_PIN    39   // W2 tank full  → J3-10 GPIO39
+// ── Tank level sensors — J3 side (adjacent to relay pins) ─────────────────
+// Set to 0 to disable (pump runs in MANUAL/SCHEDULE without sensors).
+#define WSP_TANK_EMPTY_PIN    6    // W1 tank empty → J3-17 GPIO6
+#define WSP_TANK_FULL_PIN     5    // W1 tank full  → J3-16 GPIO5
+#define WSP2_TANK_EMPTY_PIN   2    // W2 tank empty → J3-13 GPIO2
+#define WSP2_TANK_FULL_PIN    38   // W2 tank full  → J3-11 GPIO38
 
 // ── IPC node and valve limits ─────────────────────────────────────────────
 #define IPC_MIN_NODES         1    // Minimum nodes supported
