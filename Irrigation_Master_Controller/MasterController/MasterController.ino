@@ -17,8 +17,10 @@
 #include "TimeManager.h"
 #include "ScheduleManager.h"
 #include "CommManager.h"       // Single include for all communication
-#include "WSPController.h"     // Water Source Pump Controller
+#include "WSPController.h"     // Water Source Pump — pure GPIO
 #include "IPController.h"      // Irrigation Pump Controller
+#include "TankManager.h"       // Tank level sensor manager
+#include "WaterFillGroup.h"    // WaterFillGroup = WSP pump + tank
 #include "PumpScheduleManager.h" // Schedule-based pump control
 #include "IrrigationSequencer.h" // Irrigation sequence execution engine
 
@@ -54,10 +56,21 @@ StorageManager  storage;
 TimeManager     timeManager;
 ScheduleManager scheduleMgr;
 // Well pumps W1/W2/W3 — GPIO 7/38/39 on Heltec V3 (ESP32-S3)
-// J3 side: W1(relay=7, empty=6, full=5)  W2(relay=3, empty=2, full=38)
+// ── Water source pumps (pure GPIO) ───────────────────────────────────────
+// J3 side: W1(relay=7)  W2(relay=3)
 WSPController   wspCtrl ("W1", WSP_PIN,  WSP_ACTIVE_HIGH);  // W1 relay → J3-18 GPIO7
 WSPController   wspCtrl2("W2", WSP2_PIN, WSP2_ACTIVE_HIGH); // W2 relay → J3-14 GPIO3
 
+// ── Storage tanks (sensor monitors) ──────────────────────────────────────
+// Sensors: W1(empty=GPIO6 J3-17, full=GPIO5 J3-16)  W2(empty=GPIO2 J3-13, full=GPIO38 J3-11)
+TankManager     tank1("T1");  // Tank 1 — serves fill group FG1
+TankManager     tank2("T2");  // Tank 2 — serves fill group FG2
+
+// ── Water fill groups (WSP pump + tank combined) ──────────────────────────
+WaterFillGroup  fillGrp1("FG1");  // FG1 = W1 pump + T1 tank
+WaterFillGroup  fillGrp2("FG2");  // FG2 = W2 pump + T2 tank
+
+// ── Irrigation groups (IPC pump + nodes) ─────────────────────────────────
 // J2 side: G1(relay=47)  G2(relay=48)
 IPController    ipcCtrl ("G1", IPC_PIN,  IPC_ACTIVE_HIGH);  // G1 relay → J2-13 GPIO47
 IPController    ipcCtrl2("G2", IPC2_PIN, IPC2_ACTIVE_HIGH); // G2 relay → J2-14 GPIO48
@@ -219,15 +232,18 @@ void setup() {
     [](const String &raw) -> CommandResult {
       String up = raw; up.trim(); up.toUpperCase();
       // WSP commands
-      // W1/W2/W3 — well pump commands
-      if (up=="W1 ON")    { wspCtrl.setMode(PumpMode::MANUAL);  wspCtrl.start("cmd");  return CommandResult(true,"W1",wspCtrl.statusString()); }
-      if (up=="W1 OFF")   { wspCtrl.stop("cmd");                               return CommandResult(true,"W1",wspCtrl.statusString()); }
-      if (up=="W1 AUTO")  { wspCtrl.setMode(PumpMode::AUTO);                   return CommandResult(true,"W1","W1→AUTO"); }
-      if (up=="W1 STATUS"){                                                     return CommandResult(true,"W1",wspCtrl.statusString()); }
-      if (up=="W2 ON")    { wspCtrl2.setMode(PumpMode::MANUAL); wspCtrl2.start("cmd"); return CommandResult(true,"W2",wspCtrl2.statusString()); }
-      if (up=="W2 OFF")   { wspCtrl2.stop("cmd");                              return CommandResult(true,"W2",wspCtrl2.statusString()); }
-      if (up=="W2 AUTO")  { wspCtrl2.setMode(PumpMode::AUTO);                  return CommandResult(true,"W2","W2→AUTO"); }
-      if (up=="W2 STATUS"){                                                     return CommandResult(true,"W2",wspCtrl2.statusString()); }
+      // ── Fill group commands: FG1/FG2 (WSP pump + tank) ──────────────────────
+      if (up=="FG1 ON")    { fillGrp1.setMode(FillMode::MANUAL); fillGrp1.start("cmd");  return CommandResult(true,"FG1",fillGrp1.statusString()); }
+      if (up=="FG1 OFF")   { fillGrp1.stop("cmd");                                       return CommandResult(true,"FG1",fillGrp1.statusString()); }
+      if (up=="FG1 AUTO")  { fillGrp1.setMode(FillMode::AUTO);                           return CommandResult(true,"FG1",fillGrp1.statusString()); }
+      if (up=="FG1 STATUS"){                                                               return CommandResult(true,"FG1",fillGrp1.statusString()); }
+      if (up=="FG2 ON")    { fillGrp2.setMode(FillMode::MANUAL); fillGrp2.start("cmd");  return CommandResult(true,"FG2",fillGrp2.statusString()); }
+      if (up=="FG2 OFF")   { fillGrp2.stop("cmd");                                       return CommandResult(true,"FG2",fillGrp2.statusString()); }
+      if (up=="FG2 AUTO")  { fillGrp2.setMode(FillMode::AUTO);                           return CommandResult(true,"FG2",fillGrp2.statusString()); }
+      if (up=="FG2 STATUS"){                                                               return CommandResult(true,"FG2",fillGrp2.statusString()); }
+      // Tank status
+      if (up=="T1 STATUS") return CommandResult(true,"T1",tank1.statusString());
+      if (up=="T2 STATUS") return CommandResult(true,"T2",tank2.statusString());
       // G1/G2 — irrigation pump commands
       if (up=="G1 ON")    { ipcCtrl.setMode(PumpMode::MANUAL);  ipcCtrl.start("cmd");  return CommandResult(true,"G1",ipcCtrl.statusString()); }
       if (up=="G1 OFF")   { ipcCtrl.stop("cmd");                               return CommandResult(true,"G1",ipcCtrl.statusString()); }
@@ -238,8 +254,8 @@ void setup() {
       // Combined status
       if (up == "PUMP STATUS") {
         return CommandResult(true, "PUMP",
-          String("W1:") + wspCtrl.statusString()  + "\n"
-        + "W2:" + wspCtrl2.statusString()  + "\n"
+          fillGrp1.statusString() + "\n"
+        + fillGrp2.statusString() + "\n"
         + "G1:" + ipcCtrl.statusString()   + "\n"
         + "G2:" + ipcCtrl2.statusString());
       }
@@ -254,10 +270,11 @@ void setup() {
         return CommandResult(true, "PS", resp);
       }
       return CommandResult(false, "PUMP",
-        "W1 ON|OFF|AUTO|STATUS  G1 ON|OFF|STATUS  PUMP STATUS\n"
-        "WSCH W1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
-        "WSCH G1 I:id,T:HH:MM,R:W,D:42,Q:n.v.min-n.v.min\n"
-        "DEL/DIS/ENA W1:id | WSCH LIST|STATUS");
+        "FG1|FG2 ON|OFF|AUTO|STATUS  G1|G2 ON|OFF|STATUS\n"
+        "T1|T2 STATUS  PUMP STATUS\n"
+        "WSCH FG1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
+        "ISCH G1 I:id,T:HH:MM,R:W,D:42,Q:n.v.min-n.v.min\n"
+        "DEL/DIS/ENA FG1:id | WSCH LIST|STATUS");
     });
 
   // ScheduleManager needs userComm access for sending notifications.
@@ -265,31 +282,33 @@ void setup() {
   scheduleMgr.init(commMgr.getUserComm(), commMgr.getNodeComm(), &ipcCtrl, &irrigSeq);
 
   // ── Pump controllers ──────────────────────────────────────────────────
-  // ── W1 ─────────────────────────────────────────────────────────────────
+  // ── WSP pumps (pure GPIO) ────────────────────────────────────────────────
   wspCtrl.begin();
-  wspCtrl.setAlertCallback([](const String &m, const String &s) { commMgr.sendAlert(m, s); });
+  wspCtrl.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
+  wspCtrl2.begin();
+  wspCtrl2.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
+
+  // ── Tanks — wire sensor pins then alert callback ──────────────────────────
+  tank1.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
 #if WSP_TANK_EMPTY_PIN > 0
   pinMode(WSP_TANK_EMPTY_PIN, INPUT_PULLUP);
-  // NC float switch: LOW = float open = tank empty
-  wspCtrl.setTankEmptyCallback([] { return digitalRead(WSP_TANK_EMPTY_PIN) == LOW; });
+  tank1.setSensorCallbacks(
+    [] { return digitalRead(WSP_TANK_EMPTY_PIN) == LOW; },  // empty = LOW
+    [] { return digitalRead(WSP_TANK_FULL_PIN)  == LOW; }); // full  = LOW
 #endif
-#if WSP_TANK_FULL_PIN > 0
-  pinMode(WSP_TANK_FULL_PIN, INPUT_PULLUP);
-  // NC float switch: LOW = float open = tank full (upper float triggers)
-  wspCtrl.setTankFullCallback ([] { return digitalRead(WSP_TANK_FULL_PIN)  == LOW; });
-#endif
-
-  // ── W2 ─────────────────────────────────────────────────────────────────
-  wspCtrl2.begin();
-  wspCtrl2.setAlertCallback([](const String &m, const String &s) { commMgr.sendAlert(m, s); });
+  tank2.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
 #if WSP2_TANK_EMPTY_PIN > 0
   pinMode(WSP2_TANK_EMPTY_PIN, INPUT_PULLUP);
-  wspCtrl2.setTankEmptyCallback([] { return digitalRead(WSP2_TANK_EMPTY_PIN) == LOW; });
+  tank2.setSensorCallbacks(
+    [] { return digitalRead(WSP2_TANK_EMPTY_PIN) == LOW; },
+    [] { return digitalRead(WSP2_TANK_FULL_PIN)  == LOW; });
 #endif
-#if WSP2_TANK_FULL_PIN > 0
-  pinMode(WSP2_TANK_FULL_PIN, INPUT_PULLUP);
-  wspCtrl2.setTankFullCallback ([] { return digitalRead(WSP2_TANK_FULL_PIN)  == LOW; });
-#endif
+
+  // ── Fill groups — bind pump + tank ────────────────────────────────────────
+  fillGrp1.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
+  fillGrp1.init(&wspCtrl, &tank1);
+  fillGrp2.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
+  fillGrp2.init(&wspCtrl2, &tank2);
 
 
   // ── G1 ──────────────────────────────────────────────────────────────
@@ -328,7 +347,8 @@ void loop() {
   //   • WiFi reconnect
   //   • Inbound queue drain
   commMgr.process();
-  wspCtrl.process();  wspCtrl2.process();
+  fillGrp1.process();   // drives WSP pump + tank sensor for FG1
+  fillGrp2.process();   // drives WSP pump + tank sensor for FG2
   ipcCtrl.process();  ipcCtrl2.process();
   scheduleMgr.process();   // drives IrrigationSequencer + startIfDue
   pumpSched.process();
