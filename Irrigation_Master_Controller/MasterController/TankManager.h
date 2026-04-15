@@ -55,7 +55,8 @@ class TankManager {
 
   void sendAlert(const String &msg, const String &sev = SEV_INFO) {
     Serial.printf("[Tank %s] %s\n", _id, msg.c_str());
-    if (_alert) _alert(msg, sev);
+    // Only push to user channels for WARNING/ERROR — not routine state changes
+    if (_alert && sev != SEV_INFO) _alert(msg, sev);
   }
 
 public:
@@ -87,7 +88,7 @@ public:
   void setFilling() {
     if (_state != TankState::FILLING) {
       _state = TankState::FILLING;
-      sendAlert("Tank filling started");
+      Serial.printf("[Tank %s] Filling started\n", _id);
     }
   }
 
@@ -113,7 +114,7 @@ public:
 
     // Fire transition callbacks
     if (prev != _state) {
-      sendAlert("Tank state: " + statusString());
+      Serial.printf("[Tank %s] State: %s\n", _id, statusString().c_str());
       if (_state == TankState::EMPTY && _onEmpty) _onEmpty();
       if (_state == TankState::FULL  && _onFull)  _onFull();
     }

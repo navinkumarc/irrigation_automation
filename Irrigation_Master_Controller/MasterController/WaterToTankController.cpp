@@ -40,7 +40,7 @@ bool WaterToTankController::start(const String &reason) {
   }
   // In AUTO mode: don't start if tank already full
   if (_mode == WTTMode::AUTO && _tank && _tank->isFull()) {
-    sendAlert("Tank already full — start skipped", SEV_INFO);
+    Serial.printf("[%s] Tank already full — start skipped\n", _id);
     return false;
   }
   doStart(reason);
@@ -57,9 +57,9 @@ void WaterToTankController::doStart(const String &reason) {
   _state     = WTTState::RUNNING;
   _startedAt = millis();
   if (_tank) _tank->setFilling();
-  sendAlert("[INFO] Fill group ON — pump:" + String(_pump->pumpId())
-            + " tank:" + (_tank ? _tank->tankId() : "none")
-            + " reason:" + reason);
+  Serial.printf("[%s] ON pump:%s tank:%s reason:%s\n",
+    _id, _pump->pumpId(),
+    _tank ? _tank->tankId() : "none", reason.c_str());
 }
 
 // ─── stop() ──────────────────────────────────────────────────────────────────
@@ -72,8 +72,9 @@ void WaterToTankController::stop(const String &reason) {
 void WaterToTankController::doStop(const String &reason) {
   if (_pump) _pump->stop(reason);
   _state = (_tank && _tank->isFull()) ? WTTState::FULL : WTTState::IDLE;
-  sendAlert("[INFO] Fill group OFF — reason:" + reason
-            + " tank:" + (_tank ? _tank->statusString() : "none"));
+  Serial.printf("[%s] OFF reason:%s tank:%s\n",
+    _id, reason.c_str(),
+    _tank ? _tank->statusString().c_str() : "none");
 }
 
 // ─── setMode() ───────────────────────────────────────────────────────────────
@@ -81,7 +82,7 @@ void WaterToTankController::setMode(WTTMode m) {
   _mode = m;
   const char *mname = (m == WTTMode::AUTO)     ? "AUTO"     :
                       (m == WTTMode::SCHEDULE)  ? "SCHEDULE" : "MANUAL";
-  sendAlert(String("[INFO] ") + _id + " mode → " + mname);
+  Serial.printf("[%s] Mode → %s\n", _id, mname);
 
   // Entering AUTO: if tank is empty right now, start immediately
   if (m == WTTMode::AUTO && _tank && _tank->isEmpty() && _state == WTTState::IDLE)
