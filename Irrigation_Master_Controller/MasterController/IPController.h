@@ -37,8 +37,11 @@ class IPController : public IPumpController {
   unsigned long _lastValveCheck  = 0;
 
 public:
-  IPController(uint8_t pin = IPC_PIN, bool activeHigh = IPC_ACTIVE_HIGH)
-    : IPumpController("IPC", pin, activeHigh) {}
+  // groupId: "G1" or "G2"
+  IPController(const char *groupId = "G1",
+               uint8_t pin = IPC_PIN, bool activeHigh = IPC_ACTIVE_HIGH)
+    : IPumpController(groupId, pin, activeHigh) {}
+  const char* groupId() const { return _name; }
 
   // ── Valve state reporting ──────────────────────────────────────────────
   // ScheduleManager calls this whenever a valve opens or closes.

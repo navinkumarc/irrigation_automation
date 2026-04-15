@@ -28,6 +28,7 @@
 #include <Arduino.h>
 #include <vector>
 #include "PumpSchedule.h"
+#include "Config.h"
 
 // Forward declarations — keep headers clean
 class WSPController;
@@ -39,6 +40,10 @@ class PumpScheduleManager {
   std::vector<PumpSchedule> schedules;
 
   WSPController     *wsp     = nullptr;
+  // Callback for IPC group schedules with sequence steps
+  // Registered from MasterController.ino → saves to irrigation schedule list
+  std::function<void(const String&, const String&,
+                     const PumpSchedule&, const std::vector<SeqStep>&)> addIrrSchedCallback;
   IPController      *ipc     = nullptr;
   UserCommunication *userComm= nullptr;
   StorageManager    *storage = nullptr;
@@ -67,6 +72,10 @@ public:
 
   // ── Persistence ──────────────────────────────────────────────────────────
   void loadSchedules();
+  void setAddIrrSchedCallback(
+    std::function<void(const String&, const String&,
+                       const PumpSchedule&, const std::vector<SeqStep>&)> cb)
+    { addIrrSchedCallback = cb; }
   void saveSchedule  (const PumpSchedule &s);
   void deleteScheduleFile(const String &id);
 

@@ -115,17 +115,23 @@ bool ScheduleManager::parseCompact(const String &compact, Schedule &s) {
       k.trim();
       v.trim();
 
-      if (k == "ID") {
+      // Short keys: I=id R=rec T=time D=day_mask M=dur_min Q=sequence
+      // Long keys:  ID    REC    T      WD         —         SEQ  (kept for compat)
+      if (k == "ID" || k == "I") {
         s.id = v;
-      } else if (k == "REC") {
+      } else if (k == "REC" || k == "R") {
         s.rec = v.length() ? v.charAt(0) : 'O';
       } else if (k == "T") {
         s.timeStr = v;
+      } else if (k == "M") {
+        // M = duration in minutes (used by irrigation schedule for pump timing)
+        s.pump_on_before_ms  = IPC_PUMP_START_DELAY_MS;
+        s.pump_off_after_ms  = IPC_PUMP_STOP_DELAY_MS;
       } else if (k == "PON") {
         s.pump_on_before_ms = (uint32_t)v.toInt();
       } else if (k == "POFF") {
         s.pump_off_after_ms = (uint32_t)v.toInt();
-      } else if (k == "SEQ") {
+      } else if (k == "SEQ" || k == "Q") {
         // FIX: Parse "N:V:D" triples. Previously only handled "N:D" (2-field),
         // silently ignoring valve_id. Now supports both 2-field (N:D, valve=0)
         // and 3-field (N:V:D) formats for backward compatibility.
@@ -136,20 +142,25 @@ bool ScheduleManager::parseCompact(const String &compact, Schedule &s) {
           String triple = (semi == -1) ? seqs.substring(spos) : seqs.substring(spos, semi);
           triple.trim();
 
-          int c1 = triple.indexOf(':');
+          // Support two step formats:
+          //   Short: N.V.M  (dot-sep, M = minutes)   e.g. 1.2.20
+          //   Long:  N:V:S  (colon-sep, S = seconds)  e.g. 1:2:1200
+          char sep = (triple.indexOf('.') > 0) ? '.' : ':';
+          bool inMinutes = (sep == '.');
+          int c1 = triple.indexOf(sep);
           if (c1 > 0) {
             SeqStep st;
             st.node_id = (uint8_t)triple.substring(0, c1).toInt();
 
-            int c2 = triple.indexOf(':', c1 + 1);
+            int c2 = triple.indexOf(sep, c1 + 1);
             if (c2 > 0) {
-              // 3-field format: N:V:D
               st.valve_id    = (uint8_t)triple.substring(c1 + 1, c2).toInt();
-              st.duration_ms = (uint32_t)triple.substring(c2 + 1).toInt() * 1000UL;
+              uint32_t val   = (uint32_t)triple.substring(c2 + 1).toInt();
+              st.duration_ms = inMinutes ? val * 60000UL : val * 1000UL;
             } else {
-              // 2-field format: N:D (legacy — valve_id defaults to 0)
               st.valve_id    = 0;
-              st.duration_ms = (uint32_t)triple.substring(c1 + 1).toInt() * 1000UL;
+              uint32_t val   = (uint32_t)triple.substring(c1 + 1).toInt();
+              st.duration_ms = inMinutes ? val * 60000UL : val * 1000UL;
             }
             s.seq.push_back(st);
           }
@@ -157,7 +168,7 @@ bool ScheduleManager::parseCompact(const String &compact, Schedule &s) {
           if (semi == -1) break;
           spos = semi + 1;
         }
-      } else if (k == "WD") {
+      } else if (k == "WD" || k == "D") {
         // Parse weekday bitmask or comma-separated day names
         // Numeric: WD=62  (bitmask)
         // Named:   WD=MON,WED,FRI

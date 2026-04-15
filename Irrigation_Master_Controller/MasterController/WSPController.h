@@ -42,8 +42,11 @@ class WSPController : public IPumpController {
   void autoProcess();
 
 public:
-  WSPController(uint8_t pin = WSP_PIN, bool activeHigh = WSP_ACTIVE_HIGH)
-    : IPumpController("WSPC", pin, activeHigh) {}
+  // pumpId: "W1", "W2", or "W3"
+  WSPController(const char *pumpId = "W1",
+                uint8_t pin = WSP_PIN, bool activeHigh = WSP_ACTIVE_HIGH)
+    : IPumpController(pumpId, pin, activeHigh) {}
+  const char* pumpId() const { return _name; }
 
   // ── Sensor registration ────────────────────────────────────────────────
   void setTankEmptyCallback   (std::function<bool()> cb) { _sensorTankEmpty = cb; }

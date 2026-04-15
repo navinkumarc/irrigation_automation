@@ -1,5 +1,6 @@
 // PumpScheduleManager.cpp  —  Schedule-based pump control
 #include "PumpScheduleManager.h"
+#include "Config.h"
 #include "WSPController.h"
 #include "IPController.h"
 #include "UserCommunication.h"
@@ -212,73 +213,140 @@ uint8_t PumpScheduleManager::parseWeekdays(const String &wd) {
 }
 
 // ─── handleCommand() ─────────────────────────────────────────────────────────
+//
+// SHORT COMMAND FORMAT (SMS-optimised, max 160 chars):
+//
+//   Pump/group schedule:
+//     PS W1 I:S1,T:06:00,R:D,M:90
+//     PS W2 I:S2,T:05:30,R:W,D:42,M:120    (D:42 = Mon+Wed+Fri bitmask)
+//     PS G1 I:S1,T:07:00,R:W,D:42,Q:1.1.20-1.2.20-2.2.10
+//
+//   Keys:  I=id  T=time  R=rec(O/D/W)  D=day_mask  M=duration_min  Q=sequence
+//   Steps: node.valve.minutes  separated by -
+//   Day bitmask: Sun=1 Mon=2 Tue=4 Wed=8 Thu=16 Fri=32 Sat=64
+//     Mon+Wed+Fri = 2+8+32 = 42
+//
+//   Control:
+//     W1 ON / W1 OFF / W1 AUTO / W1 STATUS
+//     G1 ON / G1 OFF / G1 STATUS
+//
+//   Schedule management:
+//     PS LIST           — list all pump schedules
+//     PS STATUS         — next run times
+//     DEL W1:S1         — delete schedule S1 from W1
+//     DIS W1:S1         — disable
+//     ENA W1:S1         — enable
+//
 // up = uppercase, raw = original case
 String PumpScheduleManager::handleCommand(const String &up, const String &raw) {
 
-  if (up == "PSCHED LIST")   return listText();
-  if (up == "PSCHED STATUS") return statusText();
+  // ── List / Status ────────────────────────────────────────────────────────
+  if (up == "PS LIST")   return listText();
+  if (up == "PS STATUS") return statusText();
 
-  if (up.startsWith("PSCHED DEL ")) {
-    String id = up.substring(11); id.trim();
-    return deleteSchedule(id) ? "Deleted " + id : "Not found: " + id;
+  // ── Delete / Enable / Disable  DEL W1:S1 / DIS W1:S1 / ENA W1:S1 ────────
+  if (up.startsWith("DEL ") || up.startsWith("DIS ") || up.startsWith("ENA ")) {
+    String cmd3 = up.substring(0, 3);
+    String arg  = up.substring(4); arg.trim();
+    // arg is "W1:S1" or just "S1"
+    String schedId = (arg.indexOf(':') >= 0) ? arg.substring(arg.indexOf(':') + 1) : arg;
+    if (cmd3 == "DEL") return deleteSchedule(schedId) ? "Del " + schedId : "Not found: " + schedId;
+    if (cmd3 == "DIS") return enableSchedule(schedId, false) ? "Dis " + schedId : "Not found: " + schedId;
+    if (cmd3 == "ENA") return enableSchedule(schedId, true)  ? "Ena " + schedId : "Not found: " + schedId;
   }
-  if (up.startsWith("PSCHED ENABLE ")) {
-    String id = up.substring(14); id.trim();
-    return enableSchedule(id, true) ? "Enabled " + id : "Not found: " + id;
-  }
-  if (up.startsWith("PSCHED DISABLE ")) {
-    String id = up.substring(15); id.trim();
-    return enableSchedule(id, false) ? "Disabled " + id : "Not found: " + id;
-  }
 
-  // PSCHED ADD WSP|IPC HH:MM D|W|O [duration_min] [WD=MON,WED,FRI]
-  // Example: PSCHED ADD WSP 06:00 D 60
-  // Example: PSCHED ADD IPC 07:30 W 30 WD=MON,WED,FRI
-  if (up.startsWith("PSCHED ADD ")) {
-    String body = raw.substring(11); body.trim();
-    // Tokenise
-    int p0 = body.indexOf(' ');
-    if (p0 < 0) return "Usage: PSCHED ADD WSP|IPC HH:MM D|W|O [min] [WD=...]";
-    String targetStr = body.substring(0, p0); targetStr.toUpperCase();
-    body = body.substring(p0 + 1); body.trim();
+  // ── PS W1|W2|W3|G1|G2  I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min][,Q:steps] ─
+  if (up.startsWith("PS ")) {
+    String body = raw.substring(3); body.trim();
+    // First token = pump/group address
+    int sp = body.indexOf(' ');
+    if (sp < 0) return "PS: missing fields";
+    String addr = body.substring(0, sp); addr.toUpperCase();
+    body = body.substring(sp + 1); body.trim();
 
-    int p1 = body.indexOf(' ');
-    String timeStr = (p1 > 0) ? body.substring(0, p1) : body;
-    body = (p1 > 0) ? body.substring(p1 + 1) : "";  body.trim();
+    // Determine target
+    PumpTarget target = addr.startsWith("W") ? PumpTarget::WSP : PumpTarget::IPC;
 
-    int p2 = body.indexOf(' ');
-    String recStr = (p2 > 0) ? body.substring(0, p2) : body;
-    recStr.toUpperCase();
-    body = (p2 > 0) ? body.substring(p2 + 1) : "";  body.trim();
+    // Parse key:value pairs separated by comma
+    String schedId, timeStr, recStr;
+    char   rec      = 'O';
+    uint8_t dayMask = 0;
+    uint32_t durMs  = 0;
+    std::vector<SeqStep> seq;
 
-    uint32_t durationMs = 0;
-    uint8_t  weekdays   = 0;
-
-    // Remaining tokens: optional duration_min and optional WD=...
-    while (body.length() > 0) {
-      int sp = body.indexOf(' ');
-      String tok = (sp > 0) ? body.substring(0, sp) : body;
-      String tokUp = tok; tokUp.toUpperCase();
-      if (tokUp.startsWith("WD=")) {
-        weekdays = parseWeekdays(tok.substring(3));
-      } else if (isdigit(tok.charAt(0))) {
-        durationMs = (uint32_t)tok.toInt() * 60000UL;
+    int pos = 0;
+    while (pos < (int)body.length()) {
+      int comma = body.indexOf(',', pos);
+      String tok = (comma < 0) ? body.substring(pos) : body.substring(pos, comma);
+      tok.trim();
+      int colon = tok.indexOf(':');
+      if (colon > 0) {
+        String k = tok.substring(0, colon);  k.toUpperCase();
+        String v = tok.substring(colon + 1); v.trim();
+        if      (k == "I") schedId = v;
+        else if (k == "T") timeStr = v;
+        else if (k == "R") { recStr = v; recStr.toUpperCase(); rec = recStr.charAt(0); }
+        else if (k == "D") dayMask = (uint8_t)v.toInt();
+        else if (k == "M") durMs   = (uint32_t)v.toInt() * 60000UL;
+        else if (k == "Q") {
+          // Parse steps: node.valve.minutes separated by -
+          int spos = 0;
+          while (spos < (int)v.length()) {
+            int dash = v.indexOf('-', spos);
+            String step = (dash < 0) ? v.substring(spos) : v.substring(spos, dash);
+            int d1 = step.indexOf('.');
+            int d2 = (d1 >= 0) ? step.indexOf('.', d1 + 1) : -1;
+            if (d1 > 0 && d2 > d1) {
+              SeqStep st;
+              st.node_id    = (uint8_t)step.substring(0, d1).toInt();
+              st.valve_id   = (uint8_t)step.substring(d1 + 1, d2).toInt();
+              st.duration_ms= (uint32_t)step.substring(d2 + 1).toInt() * 60000UL;
+              seq.push_back(st);
+            }
+            if (dash < 0) break;
+            spos = dash + 1;
+          }
+        }
       }
-      if (sp < 0) break;
-      body = body.substring(sp + 1); body.trim();
+      if (comma < 0) break;
+      pos = comma + 1;
     }
 
-    PumpTarget t = (targetStr == "WSP") ? PumpTarget::WSP : PumpTarget::IPC;
-    char rec = (recStr == "D") ? 'D' : (recStr == "W") ? 'W' : 'O';
+    if (schedId.length() == 0) return addr + ": I: (schedule id) required";
+    if (timeStr.length() == 0) return addr + ": T: (time HH:MM) required";
 
-    String id = addSchedule(t, timeStr, rec, durationMs, weekdays);
-    String resp = "Added " + id + " — " + targetStr + " at " + timeStr
-                + " rec:" + String(rec);
-    if (durationMs > 0) resp += " dur:" + String(durationMs/60000) + "min";
+    // For IPC groups: store sequence steps via scheduleSeqCallback if registered
+    PumpSchedule s;
+    s.id           = schedId;
+    s.pumpId       = addr;
+    s.target       = target;
+    s.rec          = rec;
+    s.timeStr      = timeStr;
+    s.durationMs   = durMs;
+    s.weekday_mask = dayMask;
+    s.enabled      = true;
+    computeNextRun(s);
+
+    // Remove any existing schedule with same id
+    deleteSchedule(schedId);
+
+    schedules.push_back(s);
+    saveSchedule(s);
+
+    // If this is an IPC group schedule with sequence steps, store them via callback
+    if (target == PumpTarget::IPC && !seq.empty() && addIrrSchedCallback) {
+      addIrrSchedCallback(schedId, addr, s, seq);
+    }
+
+    String resp = "OK " + addr + ":" + schedId + " " + timeStr
+                + " R:" + String(rec);
+    if (dayMask > 0) resp += " D:" + String(dayMask);
+    if (durMs   > 0) resp += " M:" + String(durMs / 60000);
+    if (!seq.empty()) resp += " Q:" + String(seq.size()) + "steps";
     return resp;
   }
 
-  return "Unknown pump schedule command. Use: PSCHED LIST|STATUS|ADD|DEL|ENABLE|DISABLE";
+  return "Cmds: PS W1|G1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min][,Q:steps] | DEL/DIS/ENA W1:id | PS LIST|STATUS";
 }
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
@@ -299,6 +367,7 @@ void PumpScheduleManager::loadSchedules() {
       if (deserializeJson(doc, json) == DeserializationError::Ok) {
         PumpSchedule s;
         s.id           = doc["id"]       | "";
+        s.pumpId       = doc["pump"]      | "";
         s.target       = (PumpTarget)(doc["target"] | 1);
         s.rec          = doc["rec"]       | "O";
         s.timeStr      = doc["time"]      | "";
@@ -323,6 +392,7 @@ void PumpScheduleManager::loadSchedules() {
 void PumpScheduleManager::saveSchedule(const PumpSchedule &s) {
   DynamicJsonDocument doc(512);
   doc["id"]       = s.id;
+  doc["pump"]     = s.pumpId;
   doc["target"]   = (uint8_t)s.target;
   doc["rec"]      = String(s.rec);
   doc["time"]     = s.timeStr;

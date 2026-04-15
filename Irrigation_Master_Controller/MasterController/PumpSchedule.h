@@ -12,16 +12,17 @@
 
 // Which physical pump a PumpSchedule targets
 enum class PumpTarget : uint8_t {
-  WSP = 1,   // Water Source Pump (well pump)
-  IPC = 2    // Irrigation Pump
+  WSP = 1,   // Water Source Pump (well pump)   — addressed as W1/W2/W3
+  IPC = 2    // Irrigation Pump + node group    — addressed as G1/G2
 };
 
-// Recurrence  — mirrors the irrigation Schedule convention
+// Recurrence
 //   'O' = one-time
 //   'D' = daily
-//   'W' = weekly (weekday_mask controls which days)
+//   'W' = weekly (day_mask bitmask: Mon=2 Tue=4 Wed=8 Thu=16 Fri=32 Sat=64 Sun=1)
 struct PumpSchedule {
-  String    id;              // Unique ID (e.g. "WSCHED001")
+  String    id;              // Schedule ID (e.g. "S1")
+  String    pumpId;          // Pump/group address: W1/W2/W3 or G1/G2
   PumpTarget target;         // WSP or IPC
   char      rec       = 'O'; // 'O' | 'D' | 'W'
   String    timeStr;         // "HH:MM"

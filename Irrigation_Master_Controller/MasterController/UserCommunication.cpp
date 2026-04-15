@@ -109,7 +109,12 @@ CommandResult UserCommunication::dispatchCommand(const String &raw,
   if (cmd == "STATS")            return handleStatsCommand();
   if (cmd.startsWith("START "))  return handleStartCommand(raw.substring(6));
   if (cmd.startsWith("NODE "))   return handleNodeCommand(raw.substring(5));
-  if (cmd.startsWith("ADD SCHED") || cmd.startsWith("DEL SCHED"))
+  // Irrigation schedule commands
+  if (cmd.startsWith("ADD SCHED") || cmd.startsWith("DEL SCHED")
+   || cmd.startsWith("ISCHED ")   || cmd.startsWith("ISDEL "))
+    return handleScheduleCommand(raw);
+  // Short irrigation schedule: G1 I:... (starts with G1 or G2)
+  if ((cmd.startsWith("G1 ") || cmd.startsWith("G2 ")) && cmd.indexOf("I:") >= 0)
     return handleScheduleCommand(raw);
   if (cmd == "RESTART" || cmd == "REBOOT") {
     sendAlert(MsgFmt::alertWarning("Controller restarting now..."), SEV_WARNING);
@@ -316,17 +321,19 @@ String UserCommunication::getHelpText() const {
     "Commands:\n"
     "  STATUS           — channel & schedule status\n"
     "  SCHEDULES        — list schedules\n"
-    "  ADD SCHED <compact> — add irrigation schedule\n"
-    "  DEL SCHED <id>      — delete schedule\n"
-    "  START <id>       — start schedule now\n"
-    "  STOP             — stop all schedules\n"
+    "  ISCHED G1 I:id,T:HH:MM,R:D|W|O[,D:mask][,Q:steps]\n"
+    "  ISDEL <id>       — delete irrigation schedule\n"
+    "  START <id>       — run now\n"
+    "  STOP             — stop all\n"
     "  NODE <id> <cmd>  — send command to node\n"
     "  STATS            — memory & uptime\n"
     "  DIAGNOSTICS      — full system diagnostic (serial)\n"
     "  CHECK            — health check\n"
     "  RESTART          — reboot the controller\n"
-    "  WSP ON|OFF|AUTO|STATUS  — well pump control\n"
-    "  IPC ON|OFF|STATUS       — irrigation pump control\n"
-    "  PUMP STATUS             — status of both pumps\n"
+    "  W1|W2|W3 ON|OFF|AUTO|STATUS — well pump\n"
+    "  G1|G2 ON|OFF|STATUS         — irrigation pump\n"
+    "  PUMP STATUS                 — all pump status\n"
+    "  PS W1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
+    "  DEL/DIS/ENA W1:id | PS LIST|STATUS\n"
     "  HELP             — this list\n";
 }

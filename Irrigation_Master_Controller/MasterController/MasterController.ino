@@ -53,8 +53,14 @@ Preferences     prefs;
 StorageManager  storage;
 TimeManager     timeManager;
 ScheduleManager scheduleMgr;
-WSPController   wspCtrl;         // Water Source Pump Controller (well → tank)
-IPController    ipcCtrl;         // Irrigation Pump Controller  (tank → valves)
+// Well pumps W1/W2/W3 (add pins for W2/W3 in Config.h as needed)
+WSPController   wspCtrl;         // W1 — Well pump 1  (pin WSP_PIN)
+// WSPController wspCtrl2("W2", WSP2_PIN); // W2 — uncomment when hardware present
+// WSPController wspCtrl3("W3", WSP3_PIN); // W3
+
+// Irrigation groups G1/G2 (each has own pump + nodes)
+IPController    ipcCtrl;         // G1 — Irrigation group 1 (pin IPC_PIN)
+// IPController ipcCtrl2("G2", IPC2_PIN); // G2 — uncomment when hardware present
 PumpScheduleManager pumpSched;   // Pump schedule manager
 IrrigationSequencer irrigSeq;    // Irrigation sequence engine
 CommManager     commMgr;        // The only communication object in this file
@@ -148,8 +154,9 @@ void setup() {
       String up = raw; up.trim(); up.toUpperCase();
 
       // DEL SCHED <id>
-      if (up.startsWith("DEL SCHED ")) {
-        String id = raw.substring(10); id.trim();
+      if (up.startsWith("DEL SCHED ") || up.startsWith("ISDEL ")) {
+        String id = up.startsWith("ISDEL ") ? raw.substring(6) : raw.substring(10);
+        id.trim();
         if (storage.deleteSchedule(id)) {
           // Remove from in-memory list
           schedules.erase(std::remove_if(schedules.begin(), schedules.end(),
@@ -160,6 +167,11 @@ void setup() {
       }
 
       // ADD SCHED <compact>
+      if (up.startsWith("ISCHED ")) {
+        String compact = raw.substring(7); compact.trim();
+        // ISCHED is identical to ADD SCHED — falls through to same logic
+        return scheduleCommandCallback(compact);
+      }
       if (up.startsWith("ADD SCHED ")) {
         String compact = raw.substring(10); compact.trim();
         Schedule s;
@@ -207,27 +219,35 @@ void setup() {
     [](const String &raw) -> CommandResult {
       String up = raw; up.trim(); up.toUpperCase();
       // WSP commands
-      if (up == "WSP ON")     { wspCtrl.setMode(PumpMode::MANUAL); wspCtrl.start("cmd"); return CommandResult(true,  "WSP", wspCtrl.statusString()); }
-      if (up == "WSP OFF")    { wspCtrl.stop("cmd");               return CommandResult(true,  "WSP", wspCtrl.statusString()); }
-      if (up == "WSP AUTO")   { wspCtrl.setMode(PumpMode::AUTO);   return CommandResult(true,  "WSP", "Well pump → AUTO mode"); }
-      if (up == "WSP STATUS") {                                    return CommandResult(true,  "WSP", wspCtrl.statusString()); }
-      // IPC commands
-      if (up == "IPC ON")     { ipcCtrl.setMode(PumpMode::MANUAL); ipcCtrl.start("cmd"); return CommandResult(true,  "IPC", ipcCtrl.statusString()); }
-      if (up == "IPC OFF")    { ipcCtrl.stop("cmd");               return CommandResult(true,  "IPC", ipcCtrl.statusString()); }
-      if (up == "IPC STATUS") {                                    return CommandResult(true,  "IPC", ipcCtrl.statusString()); }
+      // W1/W2/W3 — well pump commands
+      if (up=="W1 ON"||up=="WSP ON")  { wspCtrl.setMode(PumpMode::MANUAL); wspCtrl.start("cmd"); return CommandResult(true,"W1",wspCtrl.statusString()); }
+      if (up=="W1 OFF"||up=="WSP OFF"){ wspCtrl.stop("cmd");               return CommandResult(true,"W1",wspCtrl.statusString()); }
+      if (up=="W1 AUTO"||up=="WSP AUTO"){ wspCtrl.setMode(PumpMode::AUTO); return CommandResult(true,"W1","W1→AUTO"); }
+      if (up=="W1 STATUS"||up=="WSP STATUS"){                               return CommandResult(true,"W1",wspCtrl.statusString()); }
+      // G1/G2 — irrigation pump commands
+      if (up=="G1 ON"||up=="IPC ON")  { ipcCtrl.setMode(PumpMode::MANUAL); ipcCtrl.start("cmd"); return CommandResult(true,"G1",ipcCtrl.statusString()); }
+      if (up=="G1 OFF"||up=="IPC OFF"){ ipcCtrl.stop("cmd");               return CommandResult(true,"G1",ipcCtrl.statusString()); }
+      if (up=="G1 STATUS"||up=="IPC STATUS"){                               return CommandResult(true,"G1",ipcCtrl.statusString()); }
       // Combined status
       if (up == "PUMP STATUS") {
-        return CommandResult(true, "PUMP", wspCtrl.statusString() + " | " + ipcCtrl.statusString());
+        return CommandResult(true, "PUMP",
+          String("W1:") + wspCtrl.statusString() + " | G1:" + ipcCtrl.statusString());
       }
       // Pump schedule commands
-      if (up.startsWith("PSCHED ")) {
+      // Short pump schedule commands: PS W1/G1..., DEL W1:id, DIS, ENA, PS LIST/STATUS
+      if (up.startsWith("PS ")   || up.startsWith("DEL W") || up.startsWith("DEL G")
+       || up.startsWith("DIS W") || up.startsWith("DIS G")
+       || up.startsWith("ENA W") || up.startsWith("ENA G")
+       || up == "PS LIST" || up == "PS STATUS"
+       || up.startsWith("PSCHED ")) {   // legacy compat
         String resp = pumpSched.handleCommand(up, raw);
-        return CommandResult(true, "PSCHED", resp);
+        return CommandResult(true, "PS", resp);
       }
       return CommandResult(false, "PUMP",
-        "Commands: WSP ON|OFF|AUTO|STATUS  IPC ON|OFF|STATUS  PUMP STATUS\n"
-        "Schedule: PSCHED ADD WSP|IPC HH:MM D|W|O [min] [WD=MON,WED]\n"
-        "          PSCHED LIST|STATUS|DEL <id>|ENABLE <id>|DISABLE <id>");
+        "W1 ON|OFF|AUTO|STATUS  G1 ON|OFF|STATUS  PUMP STATUS\n"
+        "PS W1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
+        "PS G1 I:id,T:HH:MM,R:W,D:42,Q:n.v.min-n.v.min\n"
+        "DEL/DIS/ENA W1:id | PS LIST|STATUS");
     });
 
   // ScheduleManager needs userComm access for sending notifications.
