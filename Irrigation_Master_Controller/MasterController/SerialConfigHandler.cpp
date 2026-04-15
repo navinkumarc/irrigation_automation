@@ -23,6 +23,7 @@ bool SerialConfigHandler::handle(const String &line) {
   if (up.startsWith("ENABLE "))      return handleBearer(up, true);
   if (up.startsWith("DISABLE "))     return handleBearer(up, false);
   if (up.startsWith("SET "))         return handleSet(up, line);
+  if (up.startsWith("SETUP "))       return handleSetup(up, line);
 
   if (up == "RESTART" || up == "REBOOT") {
     Serial.println("[Config] Restarting in 1 second...");
@@ -146,6 +147,142 @@ bool SerialConfigHandler::handleSet(const String &up, const String &raw) {
   return true;
 }
 
+
+// ── SETUP WTT / SETUP IRR / SETUP SHOW / SETUP DEL ───────────────────────────
+// Serial-only. Creates and persists process group configurations.
+// Group IDs are immutable after setup.
+//
+// SETUP WTT ID:FG1,W:W1,T:T1         create WTT group
+// SETUP IRR ID:IG1,G:G1,N:15,V:4,M:1 create irrigation group
+// SETUP SHOW                          list all configured groups
+// SETUP DEL <id>                      delete a group config
+bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
+  String body = up.substring(6); body.trim();  // after "SETUP "
+
+  // ── SETUP SHOW ─────────────────────────────────────────────────────────
+  if (body == "SHOW") {
+    if (_onSetupShow) Serial.println(_onSetupShow());
+    else              Serial.println("[Setup] No show callback");
+    return true;
+  }
+
+  // ── SETUP DEL <id> ──────────────────────────────────────────────────────
+  if (body.startsWith("DEL ")) {
+    String id = body.substring(4); id.trim();
+    if (_storage.deleteProcessConfig(id)) {
+      Serial.println("[Setup] ✓ Deleted config: " + id);
+      if (_onSetupDel) Serial.println(_onSetupDel(id));
+    } else {
+      Serial.println("[Setup] Not found: " + id);
+    }
+    return true;
+  }
+
+  // ── SETUP WTT ID:x,W:W1,T:T1 ───────────────────────────────────────────
+  if (body.startsWith("WTT ")) {
+    String params = body.substring(4); params.trim();
+    WTTGroupConfig cfg;
+
+    // Parse key:value pairs
+    int pos = 0;
+    while (pos < (int)params.length()) {
+      int comma = params.indexOf(',', pos);
+      String tok = (comma < 0) ? params.substring(pos) : params.substring(pos, comma);
+      tok.trim();
+      int col = tok.indexOf(':');
+      if (col > 0) {
+        String k = tok.substring(0, col); k.toUpperCase();
+        String v = tok.substring(col + 1); v.trim();
+        if (k == "ID") cfg.id     = v;
+        if (k == "W")  cfg.pumpId = v;
+        if (k == "T")  cfg.tankId = v;
+      }
+      if (comma < 0) break;
+      pos = comma + 1;
+    }
+
+    if (!cfg.isValid()) {
+      Serial.println("[Setup] ❌ WTT requires ID:, W: and T: fields");
+      Serial.println("[Setup]    Example: SETUP WTT ID:FG1,W:W1,T:T1");
+      return true;
+    }
+    // Validate values
+    if (cfg.pumpId != "W1" && cfg.pumpId != "W2") {
+      Serial.println("[Setup] ❌ W: must be W1 or W2"); return true;
+    }
+    if (cfg.tankId != "T1" && cfg.tankId != "T2") {
+      Serial.println("[Setup] ❌ T: must be T1 or T2"); return true;
+    }
+
+    cfg.configured = true;
+    _storage.saveWTTConfig(cfg);
+    Serial.println("[Setup] ✓ WTT group saved: " + cfg.id
+                   + " pump=" + cfg.pumpId + " tank=" + cfg.tankId);
+    if (_onWTTSetup) Serial.println(_onWTTSetup(cfg));
+    Serial.println("[Setup] Group " + cfg.id + " is now available on all channels.");
+    return true;
+  }
+
+  // ── SETUP IRR ID:x,G:G1,N:15,V:4,M:1 ──────────────────────────────────
+  if (body.startsWith("IRR ")) {
+    String params = body.substring(4); params.trim();
+    IrrGroupConfig cfg;
+
+    int pos = 0;
+    while (pos < (int)params.length()) {
+      int comma = params.indexOf(',', pos);
+      String tok = (comma < 0) ? params.substring(pos) : params.substring(pos, comma);
+      tok.trim();
+      int col = tok.indexOf(':');
+      if (col > 0) {
+        String k = tok.substring(0, col); k.toUpperCase();
+        String v = tok.substring(col + 1); v.trim();
+        if (k == "ID") cfg.id        = v;
+        if (k == "G")  cfg.pumpId    = v;
+        if (k == "N")  cfg.maxNodes  = (uint8_t)v.toInt();
+        if (k == "V")  cfg.maxValves = (uint8_t)v.toInt();
+        if (k == "M")  cfg.minValves = (uint8_t)v.toInt();
+      }
+      if (comma < 0) break;
+      pos = comma + 1;
+    }
+
+    if (!cfg.isValid()) {
+      Serial.println("[Setup] ❌ IRR requires ID: and G: fields");
+      Serial.println("[Setup]    Example: SETUP IRR ID:IG1,G:G1,N:15,V:4,M:1");
+      return true;
+    }
+    if (cfg.pumpId != "G1" && cfg.pumpId != "G2") {
+      Serial.println("[Setup] ❌ G: must be G1 or G2"); return true;
+    }
+    if (cfg.maxNodes < 1 || cfg.maxNodes > 15) {
+      Serial.println("[Setup] ❌ N: must be 1-15"); return true;
+    }
+    if (cfg.maxValves < 1 || cfg.maxValves > 4) {
+      Serial.println("[Setup] ❌ V: must be 1-4"); return true;
+    }
+
+    cfg.configured = true;
+    _storage.saveIrrConfig(cfg);
+    Serial.println("[Setup] ✓ IRR group saved: " + cfg.id
+                   + " pump=" + cfg.pumpId
+                   + " nodes=" + cfg.maxNodes
+                   + " valves=" + cfg.maxValves
+                   + " minValves=" + cfg.minValves);
+    if (_onIrrSetup) Serial.println(_onIrrSetup(cfg));
+    Serial.println("[Setup] Group " + cfg.id + " is now available on all channels.");
+    return true;
+  }
+
+  Serial.println("[Setup] Unknown SETUP command.");
+  Serial.println("[Setup] Commands:");
+  Serial.println("[Setup]   SETUP WTT ID:FG1,W:W1,T:T1");
+  Serial.println("[Setup]   SETUP IRR ID:IG1,G:G1,N:15,V:4,M:1");
+  Serial.println("[Setup]   SETUP SHOW");
+  Serial.println("[Setup]   SETUP DEL <id>");
+  return true;
+}
+
 void SerialConfigHandler::printHelp() const {
   Serial.println(F(
     "\n=== CONFIG COMMANDS ===\n"
@@ -189,6 +326,13 @@ void SerialConfigHandler::printHelp() const {
     "SET BLE_NAME    <n>           Bluetooth device name\n"
     "SET LORA_FREQ   <Hz>          LoRa frequency\n"
     "SET HTTP_PORT   <n>           HTTP API port\n"
+    "\n"
+    "=== PROCESS GROUP SETUP (Serial only) ===\n"
+    "SETUP WTT ID:<id>,W:W1|W2,T:T1|T2      Create WTT group\n"
+    "SETUP IRR ID:<id>,G:G1|G2[,N:15,V:4,M:1] Create irrigation group\n"
+    "SETUP SHOW                              List all groups\n"
+    "SETUP DEL <id>                          Delete group config\n"
+    "Note: ID is permanent. Use SETUP DEL + re-create to change.\n"
     "=======================\n"
   ));
 }

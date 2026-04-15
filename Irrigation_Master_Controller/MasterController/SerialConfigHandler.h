@@ -25,8 +25,10 @@
 #define SERIAL_CONFIG_HANDLER_H
 
 #include <Arduino.h>
+#include <functional>
 #include "CommConfig.h"
 #include "StorageManager.h"
+#include "ProcessConfig.h"
 
 class SerialConfigHandler {
   StorageManager &_storage;
@@ -34,10 +36,22 @@ class SerialConfigHandler {
   bool handleSetChannel(const String &up);
   bool handleBearer    (const String &up, bool enable);
   bool handleSet       (const String &up, const String &raw);
+  bool handleSetup     (const String &up, const String &raw);
   void printHelp       () const;
+
+  // Callbacks registered from MasterController to apply setup to live objects
+  std::function<String(const WTTGroupConfig&)>  _onWTTSetup;
+  std::function<String(const IrrGroupConfig&)>  _onIrrSetup;
+  std::function<String(const String&)>          _onSetupDel;
+  std::function<String()>                       _onSetupShow;
 
 public:
   explicit SerialConfigHandler(StorageManager &storage) : _storage(storage) {}
+
+  void setWTTSetupCallback (std::function<String(const WTTGroupConfig&)> cb) { _onWTTSetup  = cb; }
+  void setIrrSetupCallback (std::function<String(const IrrGroupConfig&)> cb) { _onIrrSetup  = cb; }
+  void setSetupDelCallback (std::function<String(const String&)> cb)         { _onSetupDel  = cb; }
+  void setSetupShowCallback(std::function<String()> cb)                      { _onSetupShow = cb; }
 
   // Returns true if the line was a config command.
   bool handle(const String &line);

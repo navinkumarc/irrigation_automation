@@ -21,6 +21,7 @@
 #include "IPController.h"      // Irrigation Pump Controller
 #include "TankManager.h"       // Tank level sensor manager
 #include "WaterToTankController.h"    // WaterToTankController = WSP pump + tank
+#include "ProcessConfig.h"     // Process group config structs
 #include "PumpScheduleManager.h" // Schedule-based pump control
 #include "IrrigationSequencer.h" // Irrigation sequence execution engine
 
@@ -100,6 +101,64 @@ bool handleNodeCommand(int nodeId, const String &command) {
 }
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
+
+// ─── applyWTTConfig() — wire a loaded WTT config to live objects ──────────────
+String applyWTTConfig(const WTTGroupConfig &cfg) {
+  WaterToTankController *wtt = nullptr;
+  WSPController         *pump= nullptr;
+  TankManager           *tank= nullptr;
+
+  if      (cfg.id == "FG1") wtt = &wttCtrl1;
+  else if (cfg.id == "FG2") wtt = &wttCtrl2;
+  else return "Unknown WTT id: " + cfg.id;
+
+  if      (cfg.pumpId == "W1") pump = &wspCtrl;
+  else if (cfg.pumpId == "W2") pump = &wspCtrl2;
+  else return "Unknown pump: " + cfg.pumpId;
+
+  if      (cfg.tankId == "T1") tank = &tank1;
+  else if (cfg.tankId == "T2") tank = &tank2;
+  else return "Unknown tank: " + cfg.tankId;
+
+  wtt->init(pump, tank);
+  return "WTT " + cfg.id + " active: pump=" + cfg.pumpId + " tank=" + cfg.tankId;
+}
+
+// ─── applyIrrConfig() — wire a loaded IRR config to live objects ──────────────
+String applyIrrConfig(const IrrGroupConfig &cfg) {
+  IPController *ipc = nullptr;
+  if      (cfg.id == "IG1" || cfg.pumpId == "G1") ipc = &ipcCtrl;
+  else if (cfg.id == "IG2" || cfg.pumpId == "G2") ipc = &ipcCtrl2;
+  else return "Unknown IRR pump: " + cfg.pumpId;
+
+  ipc->setMinOpenValves(cfg.minValves);
+  irrigSeq.setMaxNodes(cfg.maxNodes);
+  irrigSeq.setMaxValvesPerNode(cfg.maxValves);
+  irrigSeq.setMinOpenValves(cfg.minValves);
+  return "IRR " + cfg.id + " active: pump=" + cfg.pumpId
+         + " nodes=" + cfg.maxNodes + " valves=" + cfg.maxValves;
+}
+
+// ─── setupShowAll() — list configured groups ──────────────────────────────────
+String setupShowAll() {
+  String out = "=== Configured Process Groups ===\n";
+  WTTGroupConfig wttCfgs[MAX_WTT_GROUPS];
+  IrrGroupConfig irrCfgs[MAX_IRR_GROUPS];
+  int wc = 0, ic = 0;
+  storage.loadWTTConfigs(wttCfgs, MAX_WTT_GROUPS, wc);
+  storage.loadIrrConfigs(irrCfgs, MAX_IRR_GROUPS, ic);
+  if (wc == 0 && ic == 0) return out + "None configured.";
+  for (int i = 0; i < wc; i++)
+    out += "WTT " + wttCfgs[i].id + ": pump=" + wttCfgs[i].pumpId
+         + " tank=" + wttCfgs[i].tankId + "\n";
+  for (int i = 0; i < ic; i++)
+    out += "IRR " + irrCfgs[i].id + ": pump=" + irrCfgs[i].pumpId
+         + " nodes=" + irrCfgs[i].maxNodes + " valves=" + irrCfgs[i].maxValves
+         + " min=" + irrCfgs[i].minValves + "\n";
+  out += "=================================";
+  return out;
+}
+
 void setup() {
   Serial.begin(SERIAL_BAUD);
   delay(1000);
@@ -306,9 +365,9 @@ void setup() {
 
   // ── Fill groups — bind pump + tank ────────────────────────────────────────
   wttCtrl1.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
-  wttCtrl1.init(&wspCtrl, &tank1);
+  // wttCtrl1 init done by applyWTTConfig() from saved config
   wttCtrl2.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
-  wttCtrl2.init(&wspCtrl2, &tank2);
+  // wttCtrl2 init done by applyWTTConfig() from saved config
 
 
   // ── G1 ──────────────────────────────────────────────────────────────
@@ -325,6 +384,30 @@ void setup() {
   commMgr.setAutoCloseCallback([](int nodeId, const String &reason) {
     irrigSeq.onNodeAutoClose(nodeId, reason);
   });
+
+  // ── Register Serial setup callbacks ─────────────────────────────────────
+  serialCfgHandler.setWTTSetupCallback ([](const WTTGroupConfig &cfg) { return applyWTTConfig(cfg); });
+  serialCfgHandler.setIrrSetupCallback ([](const IrrGroupConfig  &cfg) { return applyIrrConfig(cfg); });
+  serialCfgHandler.setSetupDelCallback ([](const String &id)            { return String("Removed: ") + id; });
+  serialCfgHandler.setSetupShowCallback([]()                             { return setupShowAll(); });
+
+  // ── Load and apply saved process configs ─────────────────────────────────
+  {
+    WTTGroupConfig wttCfgs[MAX_WTT_GROUPS]; int wc = 0;
+    storage.loadWTTConfigs(wttCfgs, MAX_WTT_GROUPS, wc);
+    for (int i = 0; i < wc; i++) {
+      String r = applyWTTConfig(wttCfgs[i]);
+      Serial.println("[Setup] WTT: " + r);
+    }
+    IrrGroupConfig irrCfgs[MAX_IRR_GROUPS]; int ic = 0;
+    storage.loadIrrConfigs(irrCfgs, MAX_IRR_GROUPS, ic);
+    for (int i = 0; i < ic; i++) {
+      String r = applyIrrConfig(irrCfgs[i]);
+      Serial.println("[Setup] IRR: " + r);
+    }
+    if (wc + ic == 0)
+      Serial.println("[Setup] ⚠ No process groups configured. Use SETUP WTT / SETUP IRR via Serial.");
+  }
   irrigSeq.setMaxNodes(IPC_MAX_NODES);
   irrigSeq.setMaxValvesPerNode(IPC_MAX_VALVES_PER_NODE);
 

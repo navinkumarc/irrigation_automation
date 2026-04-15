@@ -1,5 +1,7 @@
 // StorageManager.cpp
 #include "StorageManager.h"
+#include "ProcessConfig.h"
+#include <ArduinoJson.h>
 
 // Add extern declaration
 extern Preferences prefs;
@@ -287,4 +289,95 @@ void StorageManager::resetCommConfig(CommConfig &cfg) {
   cfg = CommConfig();   // rebuild from Config.h defaults
   saveCommConfig(cfg);
   Serial.println("[Storage] ✓ CommConfig reset to firmware defaults");
+}
+
+// ─── Process group config ─────────────────────────────────────────────────────
+
+bool StorageManager::saveWTTConfig(const WTTGroupConfig &cfg) {
+  if (!LittleFS.exists("/process")) LittleFS.mkdir("/process");
+  StaticJsonDocument<256> doc;
+  doc["id"]    = cfg.id;
+  doc["pump"]  = cfg.pumpId;
+  doc["tank"]  = cfg.tankId;
+  doc["type"]  = "WTT";
+  String json; serializeJson(doc, json);
+  String path = "/process/wtt_" + cfg.id + ".json";
+  return saveString(path, json);
+}
+
+bool StorageManager::saveIrrConfig(const IrrGroupConfig &cfg) {
+  if (!LittleFS.exists("/process")) LittleFS.mkdir("/process");
+  StaticJsonDocument<256> doc;
+  doc["id"]        = cfg.id;
+  doc["pump"]      = cfg.pumpId;
+  doc["minValves"] = cfg.minValves;
+  doc["maxNodes"]  = cfg.maxNodes;
+  doc["maxValves"] = cfg.maxValves;
+  doc["type"]      = "IRR";
+  String json; serializeJson(doc, json);
+  String path = "/process/irr_" + cfg.id + ".json";
+  return saveString(path, json);
+}
+
+bool StorageManager::deleteProcessConfig(const String &id) {
+  bool ok = false;
+  String p1 = "/process/wtt_" + id + ".json";
+  String p2 = "/process/irr_" + id + ".json";
+  if (LittleFS.exists(p1)) { LittleFS.remove(p1); ok = true; }
+  if (LittleFS.exists(p2)) { LittleFS.remove(p2); ok = true; }
+  return ok;
+}
+
+void StorageManager::loadWTTConfigs(WTTGroupConfig out[], int maxCount, int &count) {
+  count = 0;
+  if (!LittleFS.exists("/process")) return;
+  File root = LittleFS.open("/process");
+  if (!root) return;
+  File f = root.openNextFile();
+  while (f && count < maxCount) {
+    String name = f.name();
+    if (name.indexOf("wtt_") >= 0 && name.endsWith(".json")) {
+      StaticJsonDocument<256> doc;
+      if (deserializeJson(doc, f) == DeserializationError::Ok) {
+        out[count].id         = doc["id"]   | "";
+        out[count].pumpId     = doc["pump"] | "";
+        out[count].tankId     = doc["tank"] | "";
+        out[count].configured = out[count].isValid();
+        if (out[count].configured) {
+          Serial.println("[Storage] Loaded WTT config: " + out[count].id);
+          count++;
+        }
+      }
+    }
+    f.close(); f = root.openNextFile();
+  }
+  root.close();
+}
+
+void StorageManager::loadIrrConfigs(IrrGroupConfig out[], int maxCount, int &count) {
+  count = 0;
+  if (!LittleFS.exists("/process")) return;
+  File root = LittleFS.open("/process");
+  if (!root) return;
+  File f = root.openNextFile();
+  while (f && count < maxCount) {
+    String name = f.name();
+    if (name.indexOf("irr_") >= 0 && name.endsWith(".json")) {
+      StaticJsonDocument<256> doc;
+      if (deserializeJson(doc, f) == DeserializationError::Ok) {
+        out[count].id         = doc["id"]        | "";
+        out[count].pumpId     = doc["pump"]      | "";
+        out[count].minValves  = doc["minValves"] | 1;
+        out[count].maxNodes   = doc["maxNodes"]  | 15;
+        out[count].maxValves  = doc["maxValves"] | 4;
+        out[count].configured = out[count].isValid();
+        if (out[count].configured) {
+          Serial.println("[Storage] Loaded IRR config: " + out[count].id);
+          count++;
+        }
+      }
+    }
+    f.close(); f = root.openNextFile();
+  }
+  root.close();
 }

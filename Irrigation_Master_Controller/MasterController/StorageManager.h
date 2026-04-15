@@ -7,6 +7,7 @@
 #include <ArduinoJson.h>
 #include "Config.h"
 #include "CommConfig.h"
+#include "ProcessConfig.h"
 
 class StorageManager {
 public:
@@ -33,6 +34,13 @@ public:
   void loadCommConfig (CommConfig &cfg);
   void saveCommConfig (const CommConfig &cfg);
   void resetCommConfig(CommConfig &cfg);
+
+  // Process group config persistence
+  bool saveWTTConfig  (const WTTGroupConfig &cfg);
+  bool saveIrrConfig  (const IrrGroupConfig &cfg);
+  bool deleteProcessConfig(const String &id);
+  void loadWTTConfigs (WTTGroupConfig out[], int maxCount, int &count);
+  void loadIrrConfigs (IrrGroupConfig out[], int maxCount, int &count);
 };
 
 extern StorageManager storage;
