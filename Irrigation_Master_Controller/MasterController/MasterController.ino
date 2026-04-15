@@ -251,10 +251,12 @@ void setup() {
 
       // ADD SCHED <compact>
       if (up.startsWith("ISCH ")) {
-        // Route through UserCommunication schedule command handler
-        String fwd = "ADD SCHED " + raw.substring(5);
-        return commMgr.getUserComm()->dispatchCommand(
-          fwd, &scheduleRunning, &scheduleLoaded, commMgr.getStatus());
+        // Call scheduleCommandCallback directly (public member of UserCommunication)
+        String compact = raw.substring(5); compact.trim();
+        auto *uc = commMgr.getUserComm();
+        if (uc && uc->scheduleCommandCallback)
+          return uc->scheduleCommandCallback(compact);
+        return CommandResult(false, "ISCH", "Schedule handler not ready");
       }
       if (up.startsWith("ADD SCHED ")) {
         String compact = raw.substring(10); compact.trim();
