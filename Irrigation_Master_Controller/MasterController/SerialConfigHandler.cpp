@@ -223,7 +223,101 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
     return true;
   }
 
-  // ── SETUP IRR ID:x,G:G1,N:15,V:4,M:1 ──────────────────────────────────
+  // ── SETUP NODE <groupId>,N:<node>,V:<v1>,<v2>... ──────────────────────
+  // Add a node and its participating valves to an irrigation group.
+  // Run before SETUP IRR to define node membership.
+  if (body.startsWith("NODE ")) {
+    String params = body.substring(5); params.trim();
+
+    // SETUP NODE DEL <groupId>,N:<node>
+    if (params.toUpperCase().startsWith("DEL ")) {
+      String rest = params.substring(4); rest.trim();
+      int cm = rest.indexOf(',');
+      String gid = (cm > 0) ? rest.substring(0, cm) : rest;
+      uint8_t nid = 0;
+      if (cm > 0) {
+        String npart = rest.substring(cm+1); npart.trim(); npart.toUpperCase();
+        if (npart.startsWith("N:")) nid = (uint8_t)npart.substring(2).toInt();
+      }
+      if (gid.length() && nid > 0) {
+        _storage.deleteIrrNode(gid, nid);
+        Serial.println("[Setup] ✓ Removed node " + String(nid) + " from " + gid);
+      } else {
+        Serial.println("[Setup] Usage: SETUP NODE DEL <id>,N:<node>");
+      }
+      return true;
+    }
+
+    // Parse: <groupId>,N:<node>,V:<v1>,<v2>,...
+    // Example: IG1,N:1,V:2,3   or   IG1,N:2,V:4
+    String groupId;
+    uint8_t nodeId = 0;
+    uint8_t valves[MAX_VALVES_PER_NODE] = {};
+    uint8_t valveCount = 0;
+
+    int pos = 0;
+    bool parsingValves = false;
+    while (pos < (int)params.length()) {
+      int comma = params.indexOf(',', pos);
+      String tok = (comma < 0) ? params.substring(pos) : params.substring(pos, comma);
+      tok.trim();
+      String tokU = tok; tokU.toUpperCase();
+      int col = tok.indexOf(':');
+
+      if (groupId.length() == 0 && col < 0) {
+        groupId = tok;  // first bare token = group ID
+      } else if (tokU.startsWith("N:")) {
+        nodeId = (uint8_t)tok.substring(2).toInt();
+        parsingValves = false;
+      } else if (tokU.startsWith("V:")) {
+        // V:2 — first valve after V:
+        uint8_t v = (uint8_t)tok.substring(2).toInt();
+        if (v > 0 && valveCount < MAX_VALVES_PER_NODE) valves[valveCount++] = v;
+        parsingValves = true;
+      } else if (parsingValves && isdigit(tok.charAt(0))) {
+        // Additional valve numbers after V:
+        uint8_t v = (uint8_t)tok.toInt();
+        if (v > 0 && valveCount < MAX_VALVES_PER_NODE) valves[valveCount++] = v;
+      }
+      if (comma < 0) break;
+      pos = comma + 1;
+    }
+
+    if (groupId.length() == 0 || nodeId == 0 || valveCount == 0) {
+      Serial.println("[Setup] ❌ Usage: SETUP NODE <id>,N:<node>,V:<v1>,<v2>...");
+      Serial.println("[Setup]   Example: SETUP NODE IG1,N:1,V:2,3");
+      return true;
+    }
+    if (nodeId < 1 || nodeId > 15) {
+      Serial.println("[Setup] ❌ Node must be 1-15"); return true;
+    }
+
+    // Load existing nodes, update/add this node, save
+    IrrGroupConfig tmp; tmp.id = groupId;
+    _storage.loadIrrNodes(groupId, tmp);  // ok if not found yet
+    IrrNodeEntry *existing = tmp.findNode(nodeId);
+    if (existing) {
+      // Replace valves
+      existing->valveCount = 0;
+      for (int i = 0; i < valveCount; i++) existing->addValve(valves[i]);
+    } else {
+      if (tmp.nodeCount >= MAX_NODES_PER_GROUP) {
+        Serial.println("[Setup] ❌ Max nodes reached"); return true;
+      }
+      IrrNodeEntry &ne = tmp.nodes[tmp.nodeCount++];
+      ne.nodeId = nodeId;
+      for (int i = 0; i < valveCount; i++) ne.addValve(valves[i]);
+    }
+    _storage.saveIrrNodes(groupId, tmp);
+    String valveList;
+    for (int i = 0; i < valveCount; i++) { if (i) valveList += ","; valveList += valves[i]; }
+    Serial.println("[Setup] ✓ Node " + String(nodeId) + " valves=[" + valveList + "] → " + groupId);
+    Serial.println("[Setup] " + groupId + " has " + String(tmp.nodeCount) + " node(s) configured.");
+    return true;
+  }
+
+  // ── SETUP IRR ID:x,G:G1,M:1 ──────────────────────────────────────────
+  // Creates the irrigation group referencing previously defined nodes.
   if (body.startsWith("IRR ")) {
     String params = body.substring(4); params.trim();
     IrrGroupConfig cfg;
@@ -237,11 +331,9 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
       if (col > 0) {
         String k = tok.substring(0, col); k.toUpperCase();
         String v = tok.substring(col + 1); v.trim();
-        if (k == "ID") cfg.id        = v;
-        if (k == "G")  cfg.pumpId    = v;
-        if (k == "N")  cfg.maxNodes  = (uint8_t)v.toInt();
-        if (k == "V")  cfg.maxValves = (uint8_t)v.toInt();
-        if (k == "M")  cfg.minValves = (uint8_t)v.toInt();
+        if (k == "ID") cfg.id       = v;
+        if (k == "G")  cfg.pumpId   = v;
+        if (k == "M")  cfg.minValves= (uint8_t)v.toInt();
       }
       if (comma < 0) break;
       pos = comma + 1;
@@ -249,26 +341,35 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
 
     if (!cfg.isValid()) {
       Serial.println("[Setup] ❌ IRR requires ID: and G: fields");
-      Serial.println("[Setup]    Example: SETUP IRR ID:IG1,G:G1,N:15,V:4,M:1");
+      Serial.println("[Setup]    Example: SETUP IRR ID:IG1,G:G1,M:1");
       return true;
     }
     if (cfg.pumpId != "G1" && cfg.pumpId != "G2") {
       Serial.println("[Setup] ❌ G: must be G1 or G2"); return true;
     }
-    if (cfg.maxNodes < 1 || cfg.maxNodes > 15) {
-      Serial.println("[Setup] ❌ N: must be 1-15"); return true;
-    }
-    if (cfg.maxValves < 1 || cfg.maxValves > 4) {
-      Serial.println("[Setup] ❌ V: must be 1-4"); return true;
+
+    // Load node definitions
+    _storage.loadIrrNodes(cfg.id, cfg);
+    if (cfg.nodeCount == 0) {
+      Serial.println("[Setup] ⚠ No nodes defined yet. Use SETUP NODE first.");
+      Serial.println("[Setup]   Example: SETUP NODE " + cfg.id + ",N:1,V:1,2,3,4");
     }
 
     cfg.configured = true;
     _storage.saveIrrConfig(cfg);
-    Serial.println("[Setup] ✓ IRR group saved: " + cfg.id
-                   + " pump=" + cfg.pumpId
-                   + " nodes=" + cfg.maxNodes
-                   + " valves=" + cfg.maxValves
-                   + " minValves=" + cfg.minValves);
+
+    // Print node summary
+    Serial.println("[Setup] ✓ IRR group: " + cfg.id + " pump=" + cfg.pumpId
+                   + " minValves=" + cfg.minValves
+                   + " nodes=" + cfg.nodeCount);
+    for (int i = 0; i < cfg.nodeCount; i++) {
+      String vl;
+      for (int v = 0; v < cfg.nodes[i].valveCount; v++) {
+        if (v) vl += ",";
+        vl += cfg.nodes[i].valves[v];
+      }
+      Serial.println("[Setup]   Node " + String(cfg.nodes[i].nodeId) + " valves=[" + vl + "]");
+    }
     if (_onIrrSetup) Serial.println(_onIrrSetup(cfg));
     Serial.println("[Setup] Group " + cfg.id + " is now available on all channels.");
     return true;
@@ -277,7 +378,9 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
   Serial.println("[Setup] Unknown SETUP command.");
   Serial.println("[Setup] Commands:");
   Serial.println("[Setup]   SETUP WTT ID:FG1,W:W1,T:T1");
-  Serial.println("[Setup]   SETUP IRR ID:IG1,G:G1,N:15,V:4,M:1");
+  Serial.println("[Setup]   SETUP NODE IG1,N:1,V:2,3");
+  Serial.println("[Setup]   SETUP NODE IG1,N:2,V:4");
+  Serial.println("[Setup]   SETUP IRR  ID:IG1,G:G1,M:1");
   Serial.println("[Setup]   SETUP SHOW");
   Serial.println("[Setup]   SETUP DEL <id>");
   return true;
@@ -329,7 +432,9 @@ void SerialConfigHandler::printHelp() const {
     "\n"
     "=== PROCESS GROUP SETUP (Serial only) ===\n"
     "SETUP WTT ID:<id>,W:W1|W2,T:T1|T2      Create WTT group\n"
-    "SETUP IRR ID:<id>,G:G1|G2[,N:15,V:4,M:1] Create irrigation group\n"
+    "SETUP NODE <id>,N:<node>,V:<v1>,<v2>...  Add node+valves to group\n"
+    "SETUP NODE DEL <id>,N:<node>             Remove node from group\n"
+    "SETUP IRR  ID:<id>,G:G1|G2[,M:1]        Create irrigation group\n"
     "SETUP SHOW                              List all groups\n"
     "SETUP DEL <id>                          Delete group config\n"
     "Note: ID is permanent. Use SETUP DEL + re-create to change.\n"

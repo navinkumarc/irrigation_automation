@@ -38,6 +38,9 @@ public:
   // Process group config persistence
   bool saveWTTConfig  (const WTTGroupConfig &cfg);
   bool saveIrrConfig  (const IrrGroupConfig &cfg);
+  bool saveIrrNodes   (const String &groupId, const IrrGroupConfig &cfg);
+  bool loadIrrNodes   (const String &groupId, IrrGroupConfig &cfg);
+  bool deleteIrrNode  (const String &groupId, uint8_t nodeId);
   bool deleteProcessConfig(const String &id);
   void loadWTTConfigs (WTTGroupConfig out[], int maxCount, int &count);
   void loadIrrConfigs (IrrGroupConfig out[], int maxCount, int &count);

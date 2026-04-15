@@ -311,20 +311,68 @@ bool StorageManager::saveIrrConfig(const IrrGroupConfig &cfg) {
   doc["id"]        = cfg.id;
   doc["pump"]      = cfg.pumpId;
   doc["minValves"] = cfg.minValves;
-  doc["maxNodes"]  = cfg.maxNodes;
-  doc["maxValves"] = cfg.maxValves;
   doc["type"]      = "IRR";
   String json; serializeJson(doc, json);
   String path = "/process/irr_" + cfg.id + ".json";
   return saveString(path, json);
 }
 
+// Nodes stored separately: /process/irr_<id>_nodes.json
+bool StorageManager::saveIrrNodes(const String &groupId, const IrrGroupConfig &cfg) {
+  if (!LittleFS.exists("/process")) LittleFS.mkdir("/process");
+  DynamicJsonDocument doc(1024);
+  JsonArray arr = doc.createNestedArray("nodes");
+  for (int i = 0; i < cfg.nodeCount; i++) {
+    JsonObject n = arr.createNestedObject();
+    n["node"] = cfg.nodes[i].nodeId;
+    JsonArray va = n.createNestedArray("valves");
+    for (int v = 0; v < cfg.nodes[i].valveCount; v++)
+      va.add(cfg.nodes[i].valves[v]);
+  }
+  String json; serializeJson(doc, json);
+  return saveString("/process/irr_" + groupId + "_nodes.json", json);
+}
+
+bool StorageManager::loadIrrNodes(const String &groupId, IrrGroupConfig &cfg) {
+  String path = "/process/irr_" + groupId + "_nodes.json";
+  if (!fileExists(path)) return false;
+  String json = loadString(path);
+  DynamicJsonDocument doc(1024);
+  if (deserializeJson(doc, json) != DeserializationError::Ok) return false;
+  cfg.nodeCount = 0;
+  for (JsonObject n : doc["nodes"].as<JsonArray>()) {
+    if (cfg.nodeCount >= MAX_NODES_PER_GROUP) break;
+    IrrNodeEntry &entry = cfg.nodes[cfg.nodeCount];
+    entry.nodeId     = n["node"] | 0;
+    entry.valveCount = 0;
+    for (JsonVariant v : n["valves"].as<JsonArray>())
+      entry.addValve(v.as<uint8_t>());
+    if (entry.nodeId > 0) cfg.nodeCount++;
+  }
+  return true;
+}
+
+bool StorageManager::deleteIrrNode(const String &groupId, uint8_t nodeId) {
+  IrrGroupConfig tmp;
+  tmp.id = groupId;
+  if (!loadIrrNodes(groupId, tmp)) return false;
+  // Rebuild without this node
+  IrrGroupConfig updated; updated.id = groupId;
+  for (int i = 0; i < tmp.nodeCount; i++)
+    if (tmp.nodes[i].nodeId != nodeId)
+      updated.nodes[updated.nodeCount++] = tmp.nodes[i];
+  saveIrrNodes(groupId, updated);
+  return true;
+}
+
 bool StorageManager::deleteProcessConfig(const String &id) {
   bool ok = false;
   String p1 = "/process/wtt_" + id + ".json";
   String p2 = "/process/irr_" + id + ".json";
+  String p3 = "/process/irr_" + id + "_nodes.json";
   if (LittleFS.exists(p1)) { LittleFS.remove(p1); ok = true; }
   if (LittleFS.exists(p2)) { LittleFS.remove(p2); ok = true; }
+  if (LittleFS.exists(p3)) { LittleFS.remove(p3); ok = true; }
   return ok;
 }
 
@@ -368,9 +416,9 @@ void StorageManager::loadIrrConfigs(IrrGroupConfig out[], int maxCount, int &cou
         out[count].id         = doc["id"]        | "";
         out[count].pumpId     = doc["pump"]      | "";
         out[count].minValves  = doc["minValves"] | 1;
-        out[count].maxNodes   = doc["maxNodes"]  | 15;
-        out[count].maxValves  = doc["maxValves"] | 4;
         out[count].configured = out[count].isValid();
+        if (out[count].configured)
+          loadIrrNodes(out[count].id, out[count]);  // load node/valve membership
         if (out[count].configured) {
           Serial.println("[Storage] Loaded IRR config: " + out[count].id);
           count++;

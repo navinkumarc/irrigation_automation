@@ -26,6 +26,7 @@
 #define PROCESS_CONFIG_H
 
 #include <Arduino.h>
+#include "Config.h"
 
 // ─── WTT group config ─────────────────────────────────────────────────────────
 struct WTTGroupConfig {
@@ -39,22 +40,80 @@ struct WTTGroupConfig {
   }
 };
 
+// ─── Node valve entry — one node's valve membership in an irrigation group ────
+struct IrrNodeEntry {
+  uint8_t nodeId   = 0;
+  uint8_t valves[4]= {0,0,0,0};  // valve IDs present in this group (0 = unused slot)
+  uint8_t valveCount = 0;
+
+  void addValve(uint8_t v) {
+    if (valveCount < 4) valves[valveCount++] = v;
+  }
+  bool hasValve(uint8_t v) const {
+    for (int i = 0; i < valveCount; i++) if (valves[i] == v) return true;
+    return false;
+  }
+};
+
 // ─── Irrigation group config ──────────────────────────────────────────────────
+//
+// An irrigation group defines:
+//   • Which pump (G1/G2)
+//   • Which nodes and which valves on each node participate
+//   • Minimum open valves required to run the pump
+//
+// Node membership is stored separately in /process/irr_<id>_nodes.json.
+// The IrrGroupConfig holds a runtime-loaded copy in nodes[].
+//
+// Setup sequence (Serial only):
+//   SETUP NODE IG1,N:1,V:2,3        add node 1, valves 2 and 3 to group IG1
+//   SETUP NODE IG1,N:2,V:4          add node 2, valve 4
+//   SETUP NODE IG1,N:15,V:2,3       add node 15, valves 2 and 3
+//   SETUP IRR ID:IG1,G:G1,M:1       create group (references above nodes)
+//
+// To remove a node:  SETUP NODE DEL IG1,N:1
+// To view:          SETUP SHOW
+
+#define MAX_NODES_PER_GROUP  15
+#define MAX_VALVES_PER_NODE   4
+
 struct IrrGroupConfig {
-  String  id;          // Group ID e.g. "IG1"
-  String  pumpId;      // "G1" or "G2"
-  uint8_t minValves  = 1;
-  uint8_t maxNodes   = 15;
-  uint8_t maxValves  = 4;
-  bool    configured = false;
+  String       id;                              // Group ID e.g. "IG1"
+  String       pumpId;                          // "G1" or "G2"
+  uint8_t      minValves  = 1;                  // Min open valves for pump
+  uint8_t      nodeCount  = 0;
+  IrrNodeEntry nodes[MAX_NODES_PER_GROUP];       // Loaded at runtime
+  bool         configured = false;
 
   bool isValid() const {
     return id.length() > 0 && pumpId.length() > 0;
+  }
+
+  IrrNodeEntry* findNode(uint8_t nodeId) {
+    for (int i = 0; i < nodeCount; i++)
+      if (nodes[i].nodeId == nodeId) return &nodes[i];
+    return nullptr;
+  }
+
+  // Build a flat SeqStep list with given duration per valve (for schedule use)
+  // Returns step count; caller provides buffer
+  int buildSteps(SeqStep *out, int maxSteps, uint32_t durationMs) const {
+    int n = 0;
+    for (int i = 0; i < nodeCount && n < maxSteps; i++) {
+      for (int v = 0; v < nodes[i].valveCount && n < maxSteps; v++) {
+        out[n].node_id    = nodes[i].nodeId;
+        out[n].valve_id   = nodes[i].valves[v];
+        out[n].duration_ms= durationMs;
+        n++;
+      }
+    }
+    return n;
   }
 };
 
 // ── Limits ────────────────────────────────────────────────────────────────────
 #define MAX_WTT_GROUPS   2   // Max WaterToTank groups (W1/W2 pumps + T1/T2 tanks)
 #define MAX_IRR_GROUPS   2   // Max irrigation groups (G1/G2 pumps)
+#define MAX_TOTAL_STEPS  60  // 15 nodes × 4 valves
 
 #endif // PROCESS_CONFIG_H

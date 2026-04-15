@@ -151,10 +151,19 @@ String setupShowAll() {
   for (int i = 0; i < wc; i++)
     out += "WTT " + wttCfgs[i].id + ": pump=" + wttCfgs[i].pumpId
          + " tank=" + wttCfgs[i].tankId + "\n";
-  for (int i = 0; i < ic; i++)
+  for (int i = 0; i < ic; i++) {
     out += "IRR " + irrCfgs[i].id + ": pump=" + irrCfgs[i].pumpId
-         + " nodes=" + irrCfgs[i].maxNodes + " valves=" + irrCfgs[i].maxValves
-         + " min=" + irrCfgs[i].minValves + "\n";
+         + " min=" + irrCfgs[i].minValves
+         + " nodes=" + irrCfgs[i].nodeCount + "\n";
+    for (int n = 0; n < irrCfgs[i].nodeCount; n++) {
+      out += "  Node " + String(irrCfgs[i].nodes[n].nodeId) + " valves=[";
+      for (int v = 0; v < irrCfgs[i].nodes[n].valveCount; v++) {
+        if (v) out += ",";
+        out += irrCfgs[i].nodes[n].valves[v];
+      }
+      out += "]\n";
+    }
+  }
   out += "=================================";
   return out;
 }
