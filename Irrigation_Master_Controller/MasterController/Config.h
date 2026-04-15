@@ -92,76 +92,75 @@
 #define MODEM_PWRKEY 4
 #define MODEM_RESET  15
 
-// ── Heltec WiFi LoRa 32 V3 (ESP32-S3) — GPIO allocation for pump relays ──
+// ── Heltec WiFi LoRa 32 V3 (ESP32-S3) — GPIO pin assignments ─────────────
 //
-// RESERVED by onboard hardware (do NOT use):
-//   LoRa SX1262 : 8 9 10 11 12 13 14
-//   OLED I2C    : 17 18 21
-//   USB         : 19 20
-//   Battery/ADC : 1 36 37
-//   Onboard LED : 35
-//   Boot button : 0
-//   Modem EC200U: 4 15 45 46
-//   RTC DS3231  : 41 42
-//   Strapping   : 0 3 45 46
-//   NOT on S3   : 25-34  ← these are ESP32 original only, absent on S3!
+// Verified from official Heltec V3 datasheet (HTIT-WB32LA_V3) and schematic.
+// Only GPIO physically present on Header J2 or Header J3 are used.
 //
-// FREE GPIO for relay outputs: 5 6 7 38 39 40 47 48
+// ── Header J3 (left side) ────────────────────────────────────────────────
+//  J3-1  GND          J3-10 GPIO39  J3-2  3V3
+//  J3-3  3V3          J3-11 GPIO38  J3-4  GPIO37 ← ADC_Ctrl (INTERNAL)
+//  J3-5  GPIO46 ←MODEM TX  J3-6  GPIO45 ←MODEM RX
+//  J3-7  GPIO42 ←RTC SCL  J3-8  GPIO41 ←RTC SDA
+//  J3-9  GPIO40        J3-12 GPIO1  ←VBAT ADC (INTERNAL)
+//  J3-13 GPIO2         J3-14 GPIO3
+//  J3-15 GPIO4 ←MODEM PWRKEY   J3-16 GPIO5
+//  J3-17 GPIO6         J3-18 GPIO7
 //
-// Pump relay assignments (connect relay IN pin → these GPIO):
-//   G1 IPC  (Irrigation Pump group 1)  → GPIO 5
-//   G2 IPC  (Irrigation Pump group 2)  → GPIO 6
-//   W1 WSP  (Well pump 1)              → GPIO 7
-//   W2 WSP  (Well pump 2)              → GPIO 38
-//   W3 WSP  (Well pump 3)              → GPIO 39
+// ── Header J2 (right side) ───────────────────────────────────────────────
+//  J2-1  GND           J2-2  5V
+//  J2-3  Ve(3.3V out)  J2-4  Ve(3.3V out)
+//  J2-5  GPIO44 ←Serial RX    J2-6  GPIO43 ←Serial TX
+//  J2-7  RST           J2-8  GPIO0 ←BOOT button
+//  J2-9  GPIO36 ←Vext_Ctrl(INTERNAL)  J2-10 GPIO35 ←LED(INTERNAL)
+//  J2-11 GPIO34        J2-12 GPIO33
+//  J2-13 GPIO47        J2-14 GPIO48
+//  J2-15 GPIO26        J2-16 GPIO21 ←OLED RST
+//  J2-17 GPIO20 ←USB D+       J2-18 GPIO19 ←USB D-
 //
-// Tank sensors (W1 example — adjust per installation):
-//   W1 TANK EMPTY                      → GPIO 40  (active LOW)
-//   W1 TANK FULL                       → GPIO 47  (active HIGH)
+// ── Internal only (NOT on any header) ────────────────────────────────────
+//  GPIO8-14   LoRa SX1262 SPI
+//  GPIO17-18  OLED I2C (SDA/SCL)
+//  GPIO15     Modem RESET
 //
-// All relays: ACTIVE_HIGH = true (relay IN HIGH → pump ON)
-// Use optocoupler relay modules; do NOT drive pump directly from GPIO.
+// ── Pump relay outputs (connect relay module IN → these pins) ─────────────
+//  G1 irrigation pump → J3-16 GPIO5   (relay IN, active HIGH)
+//  G2 irrigation pump → J3-17 GPIO6   (relay IN, active HIGH)
+//  W1 well pump       → J3-18 GPIO7   (relay IN, active HIGH)
+//  W2 well pump       → J3-14 GPIO3   (relay IN, active HIGH)
+//
+// ── Tank level sensors (NC float switch → INPUT_PULLUP, LOW = triggered) ──
+//  W1 tank empty      → J2-13 GPIO47
+//  W1 tank full       → J2-14 GPIO48
+//  W2 tank empty      → J3-9  GPIO40
+//  W2 tank full       → J3-10 GPIO39
+//
+// ── Spare GPIO (free for future use) ─────────────────────────────────────
+//  GPIO2  (J3-13)   GPIO26 (J2-15)
+//  GPIO33 (J2-12)   GPIO34 (J2-11)   GPIO38 (J3-11)
 
-// ── Irrigation Pump Controller (IPC) relay pins ──────────────────────────
-#define PUMP_PIN         5     // legacy alias — same as IPC_PIN (G1)
+// ── Irrigation Pump Controller (IPC) relay pins ───────────────────────────
+#define PUMP_PIN         5     // legacy alias — same as IPC_PIN
 #define PUMP_ACTIVE_HIGH true
-#define IPC_PIN          5     // G1 — Irrigation group 1 relay → GPIO 5
+#define IPC_PIN          5     // G1 — Irrigation pump 1 → J3-16 GPIO5
 #define IPC_ACTIVE_HIGH  true
-#define IPC2_PIN         6     // G2 — Irrigation group 2 relay → GPIO 6
+#define IPC2_PIN         6     // G2 — Irrigation pump 2 → J3-17 GPIO6
 #define IPC2_ACTIVE_HIGH true
 
-// ── Water Source Pump Controller (WSPC) relay pins ───────────────────────
-#define WSP_PIN          7     // W1 — Well pump 1 relay → GPIO 7
+// ── Water Source Pump Controller (WSPC) relay pins ────────────────────────
+// Max 2 well pumps (W3 removed — only W1 and W2 needed)
+#define WSP_PIN          7     // W1 — Well pump 1 → J3-18 GPIO7
 #define WSP_ACTIVE_HIGH  true
-#define WSP2_PIN         38    // W2 — Well pump 2 relay → GPIO 38
+#define WSP2_PIN         3     // W2 — Well pump 2 → J3-14 GPIO3
 #define WSP2_ACTIVE_HIGH true
-#define WSP3_PIN         39    // W3 — Well pump 3 relay → GPIO 39
-#define WSP3_ACTIVE_HIGH true
 
-// ── Tank level sensor pins ─────────────────────────────────────────────────
-// Sensor type: float switch or conductive probe.
-// EMPTY sensor: NC (Normally Closed) float — opens when water drops below probe.
-//   Wire: GPIO → 10kΩ pull-up to 3.3V → sensor → GND
-//   Logic: LOW = tank empty (sensor open, pull-up reading low? No —
-//          use INPUT_PULLUP, sensor pulls to GND when submerged = HIGH = full)
-//
-// Recommended wiring for float switch (NC type):
-//   EMPTY: GPIO + INPUT_PULLUP; float NC→GND; LOW = switch open = tank empty
-//   FULL:  GPIO + INPUT_PULLUP; float NC→GND; LOW = switch closed = tank full
-//
-// Set pin to 0 to disable that sensor (runs without it in MANUAL/SCHEDULE mode).
-
-// W1 sensors → GPIO 40 (empty) and GPIO 47 (full)
-#define WSP_TANK_EMPTY_PIN    40   // W1 tank empty → GPIO 40 (INPUT_PULLUP, LOW=empty)
-#define WSP_TANK_FULL_PIN     47   // W1 tank full  → GPIO 47 (INPUT_PULLUP, LOW=full)
-
-// W2 sensors → GPIO 16 (empty) and GPIO 22 (full)
-#define WSP2_TANK_EMPTY_PIN   16   // W2 tank empty → GPIO 16
-#define WSP2_TANK_FULL_PIN    22   // W2 tank full  → GPIO 22
-
-// W3 sensors → GPIO 23 (empty) and GPIO 24 (full)
-#define WSP3_TANK_EMPTY_PIN   23   // W3 tank empty → GPIO 23
-#define WSP3_TANK_FULL_PIN    24   // W3 tank full  → GPIO 24
+// ── Tank level sensor pins ────────────────────────────────────────────────
+// NC float switch + INPUT_PULLUP. LOW = switch open = level reached.
+// Set to 0 to disable (pump runs in MANUAL/SCHEDULE mode without sensors).
+#define WSP_TANK_EMPTY_PIN    47   // W1 tank empty → J2-13 GPIO47
+#define WSP_TANK_FULL_PIN     48   // W1 tank full  → J2-14 GPIO48
+#define WSP2_TANK_EMPTY_PIN   40   // W2 tank empty → J3-9  GPIO40
+#define WSP2_TANK_FULL_PIN    39   // W2 tank full  → J3-10 GPIO39
 
 // ── IPC node and valve limits ─────────────────────────────────────────────
 #define IPC_MIN_NODES         1    // Minimum nodes supported
