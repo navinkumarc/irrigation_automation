@@ -3,6 +3,7 @@
 #include "NodeCommunication.h"
 #include "IPController.h"
 #include "UserCommunication.h"
+#include "TankManager.h"
 
 // ─── init() ──────────────────────────────────────────────────────────────────
 void IrrigationSequencer::init(NodeCommunication *nc, IPController *ipc,
@@ -105,9 +106,11 @@ bool IrrigationSequencer::start(const std::vector<SeqStep> &steps,
   for (auto &s : steps)
     if (!validateStep(s)) return false;
 
-  seq      = steps;
-  schedId  = scheduleId;
-  stepIdx  = 0;
+  seq              = steps;
+  schedId          = scheduleId;
+  stepIdx          = 0;
+  _tankEmptyActive = false;
+  _tankEmptySince  = 0;
   memset(valveOpen, 0, sizeof(valveOpen));
   reportValveCount();
 
@@ -162,6 +165,40 @@ void IrrigationSequencer::onNodeAutoClose(int nodeId, const String &reason) {
   sendAlert(MsgFmt::alertAutoClose(nodeId, reason), SEV_WARNING);
 }
 
+// ─── checkTankDryRun() — called every process() when pump is running ─────────
+void IrrigationSequencer::checkTankDryRun(unsigned long now) {
+  if (!_tank) return;
+  if (now - _lastTankCheckMs < _tankCheckIntervalMs) return;
+  _lastTankCheckMs = now;
+
+  bool empty = _tank->isEmpty();
+
+  if (empty) {
+    if (!_tankEmptyActive) {
+      // Tank just became empty — start the dry-run timer
+      _tankEmptyActive = true;
+      _tankEmptySince  = now;
+      sendAlert("[WARNING] Irrigation source tank empty — monitoring for dry run",
+                SEV_WARNING);
+    } else {
+      // Tank has been empty — check if timeout exceeded
+      if (now - _tankEmptySince >= _dryRunTimeoutMs) {
+        sendAlert("DRY RUN — tank empty for " +
+                  String(_dryRunTimeoutMs / 1000) + "s during irrigation. Stopping.",
+                  SEV_ERROR);
+        stop("dry-run-tank-empty");
+      }
+    }
+  } else {
+    // Tank no longer empty — reset tracker
+    if (_tankEmptyActive) {
+      Serial.printf("[IrrigSeq] Tank refilled — dry-run timer reset\n");
+      _tankEmptyActive = false;
+      _tankEmptySince  = 0;
+    }
+  }
+}
+
 // ─── process() — state machine ────────────────────────────────────────────────
 void IrrigationSequencer::process() {
   unsigned long now = millis();
@@ -175,6 +212,9 @@ void IrrigationSequencer::process() {
 
     // ── First valve is open; wait pumpStartDelayMs then start pump ─────────
     case SeqState::PUMP_STARTING:
+      // Check tank even before pump starts
+      checkTankDryRun(now);
+      if (!isRunning()) break;
       if (now - stateMs >= pumpStartDelayMs) {
         int open = countOpenValves();
         if (open >= minOpenValves) {
@@ -196,6 +236,10 @@ void IrrigationSequencer::process() {
 
     // ── Pump running; advance sequence steps ──────────────────────────────
     case SeqState::RUNNING: {
+      // ── Dry-run / tank-empty check ──────────────────────────────────────
+      checkTankDryRun(now);
+      if (!isRunning()) break;  // stop() was called by dry-run check
+
       if (stepIdx >= (int)seq.size()) {
         // All steps done — begin pump-stop sequence
         setState(SeqState::PUMP_STOPPING);

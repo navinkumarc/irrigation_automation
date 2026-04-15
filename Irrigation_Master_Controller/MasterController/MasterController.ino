@@ -133,9 +133,36 @@ String applyIrrConfig(const IrrGroupConfig &cfg) {
 
   ipc->setMinOpenValves(cfg.minValves);
   irrigSeq.setMinOpenValves(cfg.minValves);
-  // Apply node/valve limits from Config.h defaults
   irrigSeq.setMaxNodes(IPC_MAX_NODES);
   irrigSeq.setMaxValvesPerNode(IPC_MAX_VALVES_PER_NODE);
+
+  // Wire tank to sequencer for dry-run protection.
+  // Load WTT configs to find which tank feeds this irrigation group.
+  // Convention: G1 is typically fed by FG1/T1, G2 by FG2/T2.
+  // If an explicit WTT config mapping exists for this pump, use that tank.
+  {
+    WTTGroupConfig wttCfgs[MAX_WTT_GROUPS]; int wc = 0;
+    storage.loadWTTConfigs(wttCfgs, MAX_WTT_GROUPS, wc);
+    TankManager *linkedTank = nullptr;
+    for (int i = 0; i < wc; i++) {
+      // Match by pump slot: G1→W1 or G2→W2 convention
+      if ((cfg.pumpId=="G1" && wttCfgs[i].pumpId=="W1") ||
+          (cfg.pumpId=="G2" && wttCfgs[i].pumpId=="W2")) {
+        linkedTank = (wttCfgs[i].tankId == "T1") ? &tank1 : &tank2;
+        break;
+      }
+    }
+    if (linkedTank) {
+      irrigSeq.setTank(linkedTank);
+      Serial.println("[Setup] IRR " + cfg.id + " dry-run monitor → "
+                     + String(linkedTank->tankId()));
+    } else {
+      irrigSeq.setTank(nullptr);
+      Serial.println("[Setup] IRR " + cfg.id
+                     + " — no tank linked, dry-run disabled");
+    }
+  }
+
   return "IRR " + cfg.id + " active: pump=" + cfg.pumpId
          + " nodes=" + String(cfg.nodeCount)
          + " minValves=" + String(cfg.minValves);

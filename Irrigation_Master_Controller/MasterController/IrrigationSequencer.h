@@ -14,6 +14,8 @@
 //   • Enforce pump stop condition: keep pump on until last valve is about to close,
 //     then close last valve and stop pump atomically (no pressure shock)
 //   • Handle AUTO_CLOSE notifications from nodes
+//   • Monitor tank empty state — stop immediately if tank runs dry
+//     (dry-run protection: fault after dryRunTimeoutMs of empty state)
 //
 // ── NodeCommunication contract ─────────────────────────────────────────────────
 //   NodeCommunication is ONLY used for sendValveOpen() / sendValveClose().
@@ -44,6 +46,7 @@
 class NodeCommunication;
 class IPController;
 class UserCommunication;
+class TankManager;
 
 // ─── Valve tracking ───────────────────────────────────────────────────────────
 struct ValveState {
@@ -70,6 +73,14 @@ class IrrigationSequencer {
   NodeCommunication *nodeComm  = nullptr;
   IPController      *ipCtrl    = nullptr;
   UserCommunication *userComm  = nullptr;
+  TankManager       *_tank     = nullptr;   // Optional — supply tank empty check
+
+  // ── Tank dry-run protection ────────────────────────────────────────────
+  uint32_t      _dryRunTimeoutMs  = 30000;  // Stop if tank empty this long
+  unsigned long _tankEmptySince   = 0;      // millis() when empty first detected
+  bool          _tankEmptyActive  = false;  // currently seeing empty condition
+  unsigned long _lastTankCheckMs  = 0;
+  uint32_t      _tankCheckIntervalMs = 3000;
 
   // ── Runtime config ────────────────────────────────────────────────────────
   int      minNodes            = IPC_MIN_NODES;
@@ -92,14 +103,15 @@ class IrrigationSequencer {
   bool  valveOpen[IPC_MAX_NODES + 1][IPC_MAX_VALVES_PER_NODE] = {};
 
   // ── Internal helpers ──────────────────────────────────────────────────────
-  void setState      (SeqState s);
-  int  countOpenValves() const;
-  void reportValveCount();
-  bool sendOpen      (const SeqStep &step);
-  bool sendClose     (const SeqStep &step);
-  void sendAlert     (const String &msg, const String &sev = SEV_INFO);
-  bool validateStep  (const SeqStep &step) const;
-  void finishSequence();
+  void setState         (SeqState s);
+  int  countOpenValves  () const;
+  void reportValveCount ();
+  bool sendOpen         (const SeqStep &step);
+  bool sendClose        (const SeqStep &step);
+  void sendAlert        (const String &msg, const String &sev = SEV_INFO);
+  bool validateStep     (const SeqStep &step) const;
+  void finishSequence   ();
+  void checkTankDryRun  (unsigned long now);  // tank empty → stop sequence
 
 public:
   IrrigationSequencer() = default;
@@ -111,9 +123,12 @@ public:
   void setMinOpenValves   (int n)  { minOpenValves    = max(1, n); }
   void setMaxNodes        (int n)  { maxNodes         = min(n, IPC_MAX_NODES); }
   void setMaxValvesPerNode(int n)  { maxValvesPerNode = min(n, IPC_MAX_VALVES_PER_NODE); }
-  void setOverlapMs       (uint32_t ms) { overlapMs      = ms; }
-  void setPumpStartDelay  (uint32_t ms) { pumpStartDelayMs = ms; }
-  void setPumpStopDelay   (uint32_t ms) { pumpStopDelayMs  = ms; }
+  void setOverlapMs       (uint32_t ms) { overlapMs         = ms; }
+  void setPumpStartDelay  (uint32_t ms) { pumpStartDelayMs  = ms; }
+  void setPumpStopDelay   (uint32_t ms) { pumpStopDelayMs   = ms; }
+  // Optional: attach a tank so irrigation stops if source runs dry
+  void setTank            (TankManager *t)      { _tank             = t; }
+  void setDryRunTimeout   (uint32_t ms)         { _dryRunTimeoutMs  = ms; }
 
   // ── Sequence control ──────────────────────────────────────────────────────
   // Start a new irrigation sequence. Returns false if already running or invalid.
