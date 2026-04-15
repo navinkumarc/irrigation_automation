@@ -154,8 +154,8 @@ void setup() {
       String up = raw; up.trim(); up.toUpperCase();
 
       // DEL SCHED <id>
-      if (up.startsWith("DEL SCHED ") || up.startsWith("ISDEL ")) {
-        String id = up.startsWith("ISDEL ") ? raw.substring(6) : raw.substring(10);
+      if (up.startsWith("DEL SCHED ") || up.startsWith("ISDL ")) {
+        String id = up.startsWith("ISDL ") ? raw.substring(6) : raw.substring(10);
         id.trim();
         if (storage.deleteSchedule(id)) {
           // Remove from in-memory list
@@ -167,9 +167,9 @@ void setup() {
       }
 
       // ADD SCHED <compact>
-      if (up.startsWith("ISCHED ")) {
+      if (up.startsWith("ISCH ")) {
         String compact = raw.substring(7); compact.trim();
-        // ISCHED is identical to ADD SCHED — falls through to same logic
+        // ISCH is identical to ADD SCHED — falls through to same logic
         return scheduleCommandCallback(compact);
       }
       if (up.startsWith("ADD SCHED ")) {
@@ -234,20 +234,20 @@ void setup() {
           String("W1:") + wspCtrl.statusString() + " | G1:" + ipcCtrl.statusString());
       }
       // Pump schedule commands
-      // Short pump schedule commands: PS W1/G1..., DEL W1:id, DIS, ENA, PS LIST/STATUS
-      if (up.startsWith("PS ")   || up.startsWith("DEL W") || up.startsWith("DEL G")
+      // Short pump schedule commands: WSCH W1/G1..., DEL W1:id, DIS, ENA, PS LIST/STATUS
+      if (up.startsWith("WSCH ")   || up.startsWith("DEL W") || up.startsWith("DEL G")
        || up.startsWith("DIS W") || up.startsWith("DIS G")
        || up.startsWith("ENA W") || up.startsWith("ENA G")
-       || up == "PS LIST" || up == "PS STATUS"
-       || up.startsWith("PSCHED ")) {   // legacy compat
+       || up == "WSCH LIST" || up == "WSCH STATUS"
+       || up.startsWith("WSCH ")) {   // legacy compat
         String resp = pumpSched.handleCommand(up, raw);
         return CommandResult(true, "PS", resp);
       }
       return CommandResult(false, "PUMP",
         "W1 ON|OFF|AUTO|STATUS  G1 ON|OFF|STATUS  PUMP STATUS\n"
-        "PS W1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
-        "PS G1 I:id,T:HH:MM,R:W,D:42,Q:n.v.min-n.v.min\n"
-        "DEL/DIS/ENA W1:id | PS LIST|STATUS");
+        "WSCH W1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
+        "WSCH G1 I:id,T:HH:MM,R:W,D:42,Q:n.v.min-n.v.min\n"
+        "DEL/DIS/ENA W1:id | WSCH LIST|STATUS");
     });
 
   // ScheduleManager needs userComm access for sending notifications.

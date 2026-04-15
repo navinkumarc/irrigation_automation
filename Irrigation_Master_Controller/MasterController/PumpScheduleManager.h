@@ -15,12 +15,12 @@
 //   The controllers enforce their own hardware rules (valve guard, sensors).
 //
 // ── Commands (via UserCommunication → pumpCommandCallback) ─────────────────
-//   PSCHED LIST                — list all pump schedules
-//   PSCHED ADD WSP|IPC HH:MM D|W|O [duration_min] [WD=MON,WED,FRI]
-//   PSCHED DEL <id>            — delete a schedule
-//   PSCHED ENABLE  <id>        — enable
-//   PSCHED DISABLE <id>        — disable
-//   PSCHED STATUS              — next scheduled runs
+//   WSCH LIST                — list all pump schedules
+//   WSCH ADD WSP|IPC HH:MM D|W|O [duration_min] [WD=MON,WED,FRI]
+//   WSCH DEL <id>            — delete a schedule
+//   WSCH ENABLE  <id>        — enable
+//   WSCH DISABLE <id>        — disable
+//   WSCH STATUS              — next scheduled runs
 
 #ifndef PUMP_SCHEDULE_MANAGER_H
 #define PUMP_SCHEDULE_MANAGER_H

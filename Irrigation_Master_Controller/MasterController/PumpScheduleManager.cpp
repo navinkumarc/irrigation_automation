@@ -217,9 +217,9 @@ uint8_t PumpScheduleManager::parseWeekdays(const String &wd) {
 // SHORT COMMAND FORMAT (SMS-optimised, max 160 chars):
 //
 //   Pump/group schedule:
-//     PS W1 I:S1,T:06:00,R:D,M:90
-//     PS W2 I:S2,T:05:30,R:W,D:42,M:120    (D:42 = Mon+Wed+Fri bitmask)
-//     PS G1 I:S1,T:07:00,R:W,D:42,Q:1.1.20-1.2.20-2.2.10
+//     WSCH W1 I:S1,T:06:00,R:D,M:90
+//     WSCH W2 I:S2,T:05:30,R:W,D:42,M:120    (D:42 = Mon+Wed+Fri bitmask)
+//     WSCH G1 I:S1,T:07:00,R:W,D:42,Q:1.1.20-1.2.20-2.2.10
 //
 //   Keys:  I=id  T=time  R=rec(O/D/W)  D=day_mask  M=duration_min  Q=sequence
 //   Steps: node.valve.minutes  separated by -
@@ -241,8 +241,8 @@ uint8_t PumpScheduleManager::parseWeekdays(const String &wd) {
 String PumpScheduleManager::handleCommand(const String &up, const String &raw) {
 
   // ── List / Status ────────────────────────────────────────────────────────
-  if (up == "PS LIST")   return listText();
-  if (up == "PS STATUS") return statusText();
+  if (up == "WSCH LIST")   return listText();
+  if (up == "WSCH STATUS") return statusText();
 
   // ── Delete / Enable / Disable  DEL W1:S1 / DIS W1:S1 / ENA W1:S1 ────────
   if (up.startsWith("DEL ") || up.startsWith("DIS ") || up.startsWith("ENA ")) {
@@ -255,8 +255,8 @@ String PumpScheduleManager::handleCommand(const String &up, const String &raw) {
     if (cmd3 == "ENA") return enableSchedule(schedId, true)  ? "Ena " + schedId : "Not found: " + schedId;
   }
 
-  // ── PS W1|W2|W3|G1|G2  I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min][,Q:steps] ─
-  if (up.startsWith("PS ")) {
+  // ── WSCH W1|W2|W3|G1|G2  I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min][,Q:steps] ─
+  if (up.startsWith("WSCH ")) {
     String body = raw.substring(3); body.trim();
     // First token = pump/group address
     int sp = body.indexOf(' ');
@@ -346,7 +346,7 @@ String PumpScheduleManager::handleCommand(const String &up, const String &raw) {
     return resp;
   }
 
-  return "Cmds: PS W1|G1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min][,Q:steps] | DEL/DIS/ENA W1:id | PS LIST|STATUS";
+  return "Cmds: WSCH W1|G1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min][,Q:steps] | DEL/DIS/ENA W1:id | WSCH LIST|STATUS";
 }
 
 // ─── Persistence ─────────────────────────────────────────────────────────────

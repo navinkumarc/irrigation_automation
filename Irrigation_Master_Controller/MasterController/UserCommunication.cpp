@@ -111,7 +111,7 @@ CommandResult UserCommunication::dispatchCommand(const String &raw,
   if (cmd.startsWith("NODE "))   return handleNodeCommand(raw.substring(5));
   // Irrigation schedule commands
   if (cmd.startsWith("ADD SCHED") || cmd.startsWith("DEL SCHED")
-   || cmd.startsWith("ISCHED ")   || cmd.startsWith("ISDEL "))
+   || cmd.startsWith("ISCH ")   || cmd.startsWith("ISDL "))
     return handleScheduleCommand(raw);
   // Short irrigation schedule: G1 I:... (starts with G1 or G2)
   if ((cmd.startsWith("G1 ") || cmd.startsWith("G2 ")) && cmd.indexOf("I:") >= 0)
@@ -321,8 +321,8 @@ String UserCommunication::getHelpText() const {
     "Commands:\n"
     "  STATUS           — channel & schedule status\n"
     "  SCHEDULES        — list schedules\n"
-    "  ISCHED G1 I:id,T:HH:MM,R:D|W|O[,D:mask][,Q:steps]\n"
-    "  ISDEL <id>       — delete irrigation schedule\n"
+    "  ISCH G1 I:id,T:HH:MM,R:D|W|O[,D:mask][,Q:steps]\n"
+    "  ISDL <id>       — delete irrigation schedule\n"
     "  START <id>       — run now\n"
     "  STOP             — stop all\n"
     "  NODE <id> <cmd>  — send command to node\n"
@@ -333,7 +333,7 @@ String UserCommunication::getHelpText() const {
     "  W1|W2|W3 ON|OFF|AUTO|STATUS — well pump\n"
     "  G1|G2 ON|OFF|STATUS         — irrigation pump\n"
     "  PUMP STATUS                 — all pump status\n"
-    "  PS W1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
-    "  DEL/DIS/ENA W1:id | PS LIST|STATUS\n"
+    "  WSCH W1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
+    "  DEL/DIS/ENA W1:id | WSCH LIST|STATUS\n"
     "  HELP             — this list\n";
 }
