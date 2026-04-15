@@ -20,7 +20,7 @@
 #include "WSPController.h"     // Water Source Pump — pure GPIO
 #include "IPController.h"      // Irrigation Pump Controller
 #include "TankManager.h"       // Tank level sensor manager
-#include "WaterFillGroup.h"    // WaterFillGroup = WSP pump + tank
+#include "WaterToTankController.h"    // WaterToTankController = WSP pump + tank
 #include "PumpScheduleManager.h" // Schedule-based pump control
 #include "IrrigationSequencer.h" // Irrigation sequence execution engine
 
@@ -67,8 +67,8 @@ TankManager     tank1("T1");  // Tank 1 — serves fill group FG1
 TankManager     tank2("T2");  // Tank 2 — serves fill group FG2
 
 // ── Water fill groups (WSP pump + tank combined) ──────────────────────────
-WaterFillGroup  fillGrp1("FG1");  // FG1 = W1 pump + T1 tank
-WaterFillGroup  fillGrp2("FG2");  // FG2 = W2 pump + T2 tank
+WaterToTankController  wttCtrl1("FG1");  // FG1 = W1 pump + T1 tank
+WaterToTankController  wttCtrl2("FG2");  // FG2 = W2 pump + T2 tank
 
 // ── Irrigation groups (IPC pump + nodes) ─────────────────────────────────
 // J2 side: G1(relay=47)  G2(relay=48)
@@ -233,14 +233,14 @@ void setup() {
       String up = raw; up.trim(); up.toUpperCase();
       // WSP commands
       // ── Fill group commands: FG1/FG2 (WSP pump + tank) ──────────────────────
-      if (up=="FG1 ON")    { fillGrp1.setMode(FillMode::MANUAL); fillGrp1.start("cmd");  return CommandResult(true,"FG1",fillGrp1.statusString()); }
-      if (up=="FG1 OFF")   { fillGrp1.stop("cmd");                                       return CommandResult(true,"FG1",fillGrp1.statusString()); }
-      if (up=="FG1 AUTO")  { fillGrp1.setMode(FillMode::AUTO);                           return CommandResult(true,"FG1",fillGrp1.statusString()); }
-      if (up=="FG1 STATUS"){                                                               return CommandResult(true,"FG1",fillGrp1.statusString()); }
-      if (up=="FG2 ON")    { fillGrp2.setMode(FillMode::MANUAL); fillGrp2.start("cmd");  return CommandResult(true,"FG2",fillGrp2.statusString()); }
-      if (up=="FG2 OFF")   { fillGrp2.stop("cmd");                                       return CommandResult(true,"FG2",fillGrp2.statusString()); }
-      if (up=="FG2 AUTO")  { fillGrp2.setMode(FillMode::AUTO);                           return CommandResult(true,"FG2",fillGrp2.statusString()); }
-      if (up=="FG2 STATUS"){                                                               return CommandResult(true,"FG2",fillGrp2.statusString()); }
+      if (up=="FG1 ON")    { wttCtrl1.setMode(WTTMode::MANUAL); wttCtrl1.start("cmd");  return CommandResult(true,"FG1",wttCtrl1.statusString()); }
+      if (up=="FG1 OFF")   { wttCtrl1.stop("cmd");                                       return CommandResult(true,"FG1",wttCtrl1.statusString()); }
+      if (up=="FG1 AUTO")  { wttCtrl1.setMode(WTTMode::AUTO);                           return CommandResult(true,"FG1",wttCtrl1.statusString()); }
+      if (up=="FG1 STATUS"){                                                               return CommandResult(true,"FG1",wttCtrl1.statusString()); }
+      if (up=="FG2 ON")    { wttCtrl2.setMode(WTTMode::MANUAL); wttCtrl2.start("cmd");  return CommandResult(true,"FG2",wttCtrl2.statusString()); }
+      if (up=="FG2 OFF")   { wttCtrl2.stop("cmd");                                       return CommandResult(true,"FG2",wttCtrl2.statusString()); }
+      if (up=="FG2 AUTO")  { wttCtrl2.setMode(WTTMode::AUTO);                           return CommandResult(true,"FG2",wttCtrl2.statusString()); }
+      if (up=="FG2 STATUS"){                                                               return CommandResult(true,"FG2",wttCtrl2.statusString()); }
       // Tank status
       if (up=="T1 STATUS") return CommandResult(true,"T1",tank1.statusString());
       if (up=="T2 STATUS") return CommandResult(true,"T2",tank2.statusString());
@@ -254,8 +254,8 @@ void setup() {
       // Combined status
       if (up == "PUMP STATUS") {
         return CommandResult(true, "PUMP",
-          fillGrp1.statusString() + "\n"
-        + fillGrp2.statusString() + "\n"
+          wttCtrl1.statusString() + "\n"
+        + wttCtrl2.statusString() + "\n"
         + "G1:" + ipcCtrl.statusString()   + "\n"
         + "G2:" + ipcCtrl2.statusString());
       }
@@ -305,10 +305,10 @@ void setup() {
 #endif
 
   // ── Fill groups — bind pump + tank ────────────────────────────────────────
-  fillGrp1.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
-  fillGrp1.init(&wspCtrl, &tank1);
-  fillGrp2.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
-  fillGrp2.init(&wspCtrl2, &tank2);
+  wttCtrl1.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
+  wttCtrl1.init(&wspCtrl, &tank1);
+  wttCtrl2.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
+  wttCtrl2.init(&wspCtrl2, &tank2);
 
 
   // ── G1 ──────────────────────────────────────────────────────────────
@@ -347,8 +347,8 @@ void loop() {
   //   • WiFi reconnect
   //   • Inbound queue drain
   commMgr.process();
-  fillGrp1.process();   // drives WSP pump + tank sensor for FG1
-  fillGrp2.process();   // drives WSP pump + tank sensor for FG2
+  wttCtrl1.process();   // drives WSP pump + tank sensor for FG1
+  wttCtrl2.process();   // drives WSP pump + tank sensor for FG2
   ipcCtrl.process();  ipcCtrl2.process();
   scheduleMgr.process();   // drives IrrigationSequencer + startIfDue
   pumpSched.process();

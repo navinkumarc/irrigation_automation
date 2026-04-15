@@ -1,10 +1,10 @@
-// WaterFillGroup.h  —  Water filling process group
+// WaterToTankController.h  —  Water filling process group
 //
 // Combines one WSPController (well pump) + one TankManager (storage tank)
 // into a single operational unit. This is the primary interface for all
 // water-source filling operations.
 //
-// ── What WaterFillGroup owns ───────────────────────────────────────────────
+// ── What WaterToTankController owns ───────────────────────────────────────────────
 //   • Group identity: FG1 or FG2
 //   • Pointer to WSPController (pump hardware)
 //   • Pointer to TankManager (tank sensors)
@@ -14,7 +14,7 @@
 //
 // ── What moves OUT of WSPController ───────────────────────────────────────
 //   • Sensor callbacks (tank empty/full) — now owned by TankManager
-//   • AUTO mode logic — now owned by WaterFillGroup
+//   • AUTO mode logic — now owned by WaterToTankController
 //   • WSPController becomes pure pump GPIO (start/stop/process)
 //
 // ── Modes ─────────────────────────────────────────────────────────────────
@@ -32,8 +32,8 @@
 //   FG ADD FG1,W:W1,T:T1   create fill group FG1 = pump W1 + tank T1
 //   FG LIST                list all fill groups
 
-#ifndef WATER_FILL_GROUP_H
-#define WATER_FILL_GROUP_H
+#ifndef WATER_TO_TANK_CONTROLLER_H
+#define WATER_TO_TANK_CONTROLLER_H
 
 #include <Arduino.h>
 #include <functional>
@@ -45,14 +45,14 @@
 class WSPController;
 
 // ─── Fill group operating mode ────────────────────────────────────────────────
-enum class FillMode {
+enum class WTTMode {
   MANUAL,    // Direct ON/OFF command
   AUTO,      // Driven by tank sensors
   SCHEDULE   // Driven by PumpScheduleManager
 };
 
 // ─── Fill group state ─────────────────────────────────────────────────────────
-enum class FillState {
+enum class WTTState {
   IDLE,      // Pump off, waiting
   RUNNING,   // Pump on, filling tank
   FULL,      // Tank reached full — pump stopped
@@ -60,14 +60,14 @@ enum class FillState {
   STOPPING   // Pump stopping sequence
 };
 
-// ─── WaterFillGroup ───────────────────────────────────────────────────────────
-class WaterFillGroup {
+// ─── WaterToTankController ───────────────────────────────────────────────────────────
+class WaterToTankController {
   const char    *_id;                    // "FG1" or "FG2"
   WSPController *_pump    = nullptr;     // Well pump controller
   TankManager   *_tank    = nullptr;     // Storage tank
 
-  FillMode  _mode          = FillMode::MANUAL;
-  FillState _state         = FillState::IDLE;
+  WTTMode  _mode          = WTTMode::MANUAL;
+  WTTState _state         = WTTState::IDLE;
 
   unsigned long _startedAt     = 0;
   unsigned long _maxRunMs      = 0;      // 0 = unlimited
@@ -87,16 +87,16 @@ class WaterFillGroup {
   void autoProcess();
 
 public:
-  WaterFillGroup(const char *id = "FG1") : _id(id) {}
+  WaterToTankController(const char *id = "FG1") : _id(id) {}
 
   // ── Setup ────────────────────────────────────────────────────────────────
   // Call once after creating pump and tank objects
   void init(WSPController *pump, TankManager *tank);
 
   const char* groupId()    const { return _id; }
-  FillMode    getMode()    const { return _mode; }
-  FillState   getState()   const { return _state; }
-  bool        isRunning()  const { return _state == FillState::RUNNING; }
+  WTTMode    getMode()    const { return _mode; }
+  WTTState   getState()   const { return _state; }
+  bool        isRunning()  const { return _state == WTTState::RUNNING; }
   WSPController* pump()    const { return _pump; }
   TankManager*   tank()    const { return _tank; }
 
@@ -108,7 +108,7 @@ public:
   // ── Control ───────────────────────────────────────────────────────────────
   bool start(const String &reason = "manual");
   void stop (const String &reason = "manual");
-  void setMode(FillMode m);
+  void setMode(WTTMode m);
 
   // ── Background — call every loop() ────────────────────────────────────────
   void process();
@@ -117,4 +117,4 @@ public:
   String statusString() const;
 };
 
-#endif // WATER_FILL_GROUP_H
+#endif // WATER_TO_TANK_CONTROLLER_H

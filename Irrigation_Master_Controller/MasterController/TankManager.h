@@ -5,7 +5,7 @@
 //   FULL  sensor — fires when water reaches the high probe
 //
 // TankManager is purely a sensor reader and state tracker.
-// It has no pump knowledge — it fires callbacks that WaterFillGroup uses
+// It has no pump knowledge — it fires callbacks that WaterToTankController uses
 // to start or stop the pump.
 //
 // ── Tank states ────────────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ class TankManager {
   std::function<bool()> _sensorEmpty; // true = tank empty (low probe open)
   std::function<bool()> _sensorFull;  // true = tank full  (high probe open)
 
-  // Event callbacks — fired by WaterFillGroup
+  // Event callbacks — fired by WaterToTankController
   std::function<void()> _onEmpty;     // tank just became empty
   std::function<void()> _onFull;      // tank just became full
 
@@ -83,7 +83,7 @@ public:
   bool        hasEmptySensor() const { return (bool)_sensorEmpty; }
   bool        hasFullSensor()  const { return (bool)_sensorFull;  }
 
-  // Force state (called by WaterFillGroup when pump starts/stops)
+  // Force state (called by WaterToTankController when pump starts/stops)
   void setFilling() {
     if (_state != TankState::FILLING) {
       _state = TankState::FILLING;

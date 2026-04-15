@@ -1,7 +1,7 @@
 // WSPController.h  —  Water Source Pump hardware controller
 //
 // Pure pump GPIO controller. Handles MANUAL and SCHEDULE modes only.
-// AUTO mode and sensor logic are owned by WaterFillGroup, which
+// AUTO mode and sensor logic are owned by WaterToTankController, which
 // wraps this controller together with a TankManager.
 //
 // WSPController is responsible for:

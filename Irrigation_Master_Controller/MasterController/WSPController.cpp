@@ -1,5 +1,5 @@
 // WSPController.cpp  —  Water Source Pump hardware controller
-// Pure GPIO — no sensor or AUTO logic (owned by WaterFillGroup)
+// Pure GPIO — no sensor or AUTO logic (owned by WaterToTankController)
 #include "WSPController.h"
 
 bool WSPController::start(const String &reason) {
