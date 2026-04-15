@@ -149,6 +149,13 @@ public:
   void setScheduleCommandCallback(std::function<CommandResult(const String&)> cb)
     { scheduleCommandCallback = cb; }
 
+  // Public entry point for irrigation schedule commands (ISCH / ADD SCHED).
+  // Calls the private scheduleCommandCallback so external code never
+  // needs to touch private members directly.
+  CommandResult submitScheduleCommand(const String &compact) {
+    return handleScheduleCommand(compact);
+  }
+
   // ── Inbound — called by CommManager channel pollers ──────────────────────
 
   // Primary entry point: receive a message from any channel.

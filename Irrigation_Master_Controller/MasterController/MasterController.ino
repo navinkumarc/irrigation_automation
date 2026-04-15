@@ -251,12 +251,10 @@ void setup() {
 
       // ADD SCHED <compact>
       if (up.startsWith("ISCH ")) {
-        // Call scheduleCommandCallback directly (public member of UserCommunication)
         String compact = raw.substring(5); compact.trim();
         auto *uc = commMgr.getUserComm();
-        if (uc && uc->scheduleCommandCallback)
-          return uc->scheduleCommandCallback(compact);
-        return CommandResult(false, "ISCH", "Schedule handler not ready");
+        if (uc) return uc->submitScheduleCommand(compact);
+        return CommandResult(false, "ISCH", "Comm not ready");
       }
       if (up.startsWith("ADD SCHED ")) {
         String compact = raw.substring(10); compact.trim();
