@@ -87,7 +87,7 @@ class NodeCommunication {
 
   // Callback registered by CommManager to receive parsed node events
   NodeMessageCallback messageCallback;
-  NodePowerInfo       _registry[16] = {};  // index = nodeId (1-15)
+  mutable NodePowerInfo _registry[16] = {};  // index = nodeId (1-15), mutable for const parseMessage
 
   bool initialized = false;
 

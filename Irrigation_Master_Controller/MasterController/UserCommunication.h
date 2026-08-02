@@ -110,6 +110,8 @@ private:
   CommandResult handleStopCommand      (bool *scheduleRunning, bool *scheduleLoaded);
   CommandResult handleStartCommand     (const String &schedId);
   CommandResult handleCheckCommand     ();
+  CommandResult handleNodesCommand     ();
+  CommandResult handlePowerCommand     (const String &raw);
   CommandResult handleNodeCommand      (const String &args);
   CommandResult handleHelpCommand      ();
   CommandResult handlePumpCommand      (const String &raw);
