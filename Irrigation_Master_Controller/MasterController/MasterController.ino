@@ -446,7 +446,7 @@ void setup() {
 
   powerMon.begin();
   powerMon.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
-  powerMon.setPollInterval(60000);
+  powerMon.setPollInterval(10000);   // 10s — keeps the display current
   displayMgr.setPowerMonitor(&powerMon);
 
   // ── POWER command callbacks ─────────────────────────────────────────────
@@ -546,6 +546,7 @@ void loop() {
   ipcCtrl.process();  ipcCtrl2.process();
   scheduleMgr.process();   // drives IrrigationSequencer + startIfDue
   pumpSched.process();
+  powerMon.process();      // battery/mains sampling (self-rate-limited)
 
   // ── Periodic health check (every 60 s) ───────────────────────────────────
   static unsigned long lastHealth = 0;

@@ -99,18 +99,28 @@ void DisplayManager::drawBatteryIcon(int pct, bool onUSB) {
     }
   }
 
-  // ── Charging bolt (⚡) when on USB ────────────────────────────────────────
+  // ── Charging bolt when on USB ────────────────────────────────────────────
+  // The display is monochrome, so a white bolt drawn over the white fill is
+  // invisible. Draw it in BLACK instead — it reads as a cutout in the fill,
+  // and still shows against the empty part of the body.
   if (onUSB) {
-    // Draw a lightning bolt inside the battery body using lines
-    // Bolt: diagonal line top-right → centre, then centre → bottom-left
     int cx = BX + BW / 2;
-    int cy = BY + BH / 2;
-    // Top segment: (cx+2, BY+1) → (cx-1, cy)
-    display->drawLine(cx + 2, BY + 1, cx - 1, cy);
-    // Bottom segment: (cx - 1, cy) → (cx - 3, BY + BH - 2)
-    display->drawLine(cx - 1, cy, cx - 3, BY + BH - 2);
-    // Short horizontal tip at midpoint to complete bolt look
-    display->drawLine(cx - 1, cy, cx + 1, cy);
+
+    // Pick the colour that contrasts with whatever is behind the bolt.
+    // The bolt spans roughly cx-2 .. cx+2; the fill spans BX+1 .. BX+1+fillWidth.
+    // If the fill reaches past the bolt, cut the bolt out in black; if the
+    // battery is mostly empty there, draw it in white against the gap.
+    bool fillCoversBolt = (BX + 1 + fillWidth) >= (cx + 2);
+    display->setColor(fillCoversBolt ? BLACK : WHITE);
+    // Upper stroke: top edge slanting down-left to the middle
+    display->drawLine(cx + 2, BY + 1, cx,     BY + 3);
+    display->drawLine(cx + 1, BY + 1, cx - 1, BY + 3);
+    // Lower stroke: middle slanting down-left to the bottom edge
+    display->drawLine(cx + 1, BY + 3, cx - 1, BY + BH - 2);
+    display->drawLine(cx,     BY + 3, cx - 2, BY + BH - 2);
+    // Waist joining the two strokes
+    display->drawLine(cx - 1, BY + 3, cx + 1, BY + 3);
+    display->setColor(WHITE);   // restore for everything drawn after
   }
 
   // ── Percentage text (right-aligned, left of icon) ─────────────────────────
