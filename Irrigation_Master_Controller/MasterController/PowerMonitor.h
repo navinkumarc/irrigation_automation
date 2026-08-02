@@ -34,19 +34,21 @@
 #include <functional>
 #include "MessageFormats.h"
 
-// ── Hardware pins (Heltec V3 — do not change) ─────────────────────────────
-#define PM_VBAT_PIN        1    // GPIO1  — ADC1_CH0 — battery voltage divider
-#define PM_ADC_CTRL_PIN    37   // GPIO37 — HIGH = enable ADC circuit
+// ── Hardware pins — confirmed from official HTIT-WB32_V3 datasheet ─────────
+// J2 pin 18: GPIO1,  ADC1_CH0, Read VBAT Voltage
+// J3 pin 11: GPIO37, ADC_Ctrl (Pull Up/Down shown in pin map)
+#define PM_VBAT_PIN        1    // GPIO1  — ADC1_CH0 — VBAT read
+#define PM_ADC_CTRL_PIN    37   // GPIO37 — ADC_Ctrl (pull-up default)
 
-// ── ADC setup ───────────────────────────────────────────────────────────────
-// R_top=390kΩ, R_bot=100kΩ → VBAT = ADC_V × 4.9
-// analogSetPinAttenuation(GPIO1, ADC_11db) — per-pin only, 0-3.9V range
-// Required: 4.2V battery → ADC pin = 0.857V, exceeds 0dB range (0.95V max)
+// ── VBAT formula (datasheet footnote 3) ──────────────────────────────────
+// VBAT = 100/(100+390) × VADC_IN1
+// ∴ VBAT = VADC × 4.9   (R_top=390kΩ, R_bot=100kΩ)
+// VADC range: 0.653V (3.2V bat) to 0.857V (4.2V bat) — within 0dB range
 #define PM_DIVIDER_RATIO   4.9f
 
-// ── ADC_Ctrl (GPIO37) ───────────────────────────────────────────────────
-// LOW  = MOSFET ON  = divider connected = valid VBAT reading
-// HIGH = MOSFET OFF = divider disconnected (power saving between reads)
+// ── GPIO37 polarity — pull-up means HIGH by default = circuit disabled ────
+// Drive LOW to enable VBAT read, HIGH to disable (saves power between reads)
+// NO analogSetPinAttenuation — 0dB is correct, attenuation breaks scale
 #define PM_ADC_CTRL_ACTIVE LOW
 
 // ── Battery thresholds (LiPo 3.7V nominal) ─────────────────────────────

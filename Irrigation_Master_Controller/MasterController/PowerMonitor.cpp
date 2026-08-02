@@ -1,45 +1,49 @@
 // PowerMonitor.cpp  —  Power source and battery monitoring
-// Heltec WiFi LoRa 32 V3 (ESP32-S3)
 //
-// ── Confirmed correct procedure (from heltec_unofficial library) ──────────────
-//   VBAT_CTRL = GPIO37  → digital output, LOW = enable read, HIGH = disable
-//   VBAT_ADC  = GPIO1   → ADC1_CH0, needs 11dB attenuation (per-pin only)
+// ── Official datasheet facts (HTIT-WB32_V3 / HTIT-WB32LA_V3) ────────────────
+//   GPIO1  = ADC1_CH0 = VBAT Read  (Header J2, pin 18)
+//   GPIO37 = ADC_Ctrl              (Header J3, pin 11, has onboard pull-up)
 //
-//   GPIO37 LOW  → MOSFET ON  → VBAT divider connected → valid reading
-//   GPIO37 HIGH → MOSFET OFF → divider disconnected   → ADC floats (~1V noise)
+//   VBAT formula (datasheet footnote 3):
+//     VBAT = 100/(100+390) × VADC_IN1
+//     ∴ VADC_IN1 = VBAT × (100+390)/100 = VBAT × 4.9
+//     ∴ VBAT     = VADC_IN1 × 4.9              ← our conversion direction
 //
-// ── Why 11dB attenuation on GPIO1 only ───────────────────────────────────────
-//   ESP32-S3 ADC at 0dB: Vref ≈ 950mV, max input ≈ 950mV
-//   VBAT divider output for 3.7V battery: 3.7/4.9 = 0.755V  ← close to limit
-//   VBAT divider output for 4.2V battery: 4.2/4.9 = 0.857V  ← OVER 0dB range!
-//   At 11dB: max input ≈ 3.9V → 0.857V is well within range ✓
-//   analogSetPinAttenuation(1, ADC_11db) changes ONLY GPIO1, not LoRa/sensors
+//   GPIO37 pull-up (yellow arrow in pin map = Pull Up/Down):
+//     Default HIGH (pull-up) = ADC circuit DISABLED
+//     Drive LOW              = ADC circuit ENABLED
+//     Drive HIGH after read  = disable (saves power)
 //
-// ── Scale factor at 11dB ─────────────────────────────────────────────────────
-//   ADC_V = raw × 3.9 / 4095      (3.9V full scale at 11dB)
-//   VBAT  = ADC_V × 4.9           (resistor divider ratio)
-//   VBAT  = raw × 3.9 × 4.9 / 4095 = raw × 0.004664
-//   Calibration constant PM_ADC_VREF can be tuned if readings are off.
+//   ADC attenuation: NONE (0dB, default)
+//     VADC_IN1 range: 0.653V (3.2V bat) to 0.857V (4.2V bat)
+//     ESP32-S3 0dB input range: 0 to ~950mV  ← fits perfectly, no attenuation needed
+//     analogSetPinAttenuation NOT called — would break the scale factor
+//
+//   Scale factor:
+//     VBAT = raw × (Vref / 4095) × 4.9
+//     Vref ≈ 1.1V on ESP32-S3 at 0dB (use POWER CAL to tune)
+//     Default: VBAT = raw × 1.1 × 4.9 / 4095 = raw × 0.001316
 
 #include "PowerMonitor.h"
 
-// Scale factor: VBAT = raw × PM_ADC_FULLSCALE × PM_DIVIDER_RATIO / 4095
-// PM_ADC_FULLSCALE for 11dB = 3.9V (nominal; real value varies ±5%)
-// Tune PM_ADC_FULLSCALE if measured voltage differs from POWER RAW output
-#define PM_ADC_FULLSCALE  3.9f
+// Vref at 0dB, 12-bit. Tune with POWER CAL if readings differ from multimeter.
+// Typical ESP32-S3: 1.1V. Some boards: 0.95V–1.1V.
+#define PM_VREF_0DB   1.1f
+#define PM_SCALE      (PM_VREF_0DB * PM_DIVIDER_RATIO / 4095.0f)
 
 // ─── begin() ─────────────────────────────────────────────────────────────────
 void PowerMonitor::begin() {
-  // GPIO37: LOW enables the VBAT read circuit
+  // GPIO37: pull-up default (HIGH = disabled). Drive LOW to enable.
   pinMode(PM_ADC_CTRL_PIN, OUTPUT);
-  digitalWrite(PM_ADC_CTRL_PIN, LOW);   // enable
-  delay(20);
+  digitalWrite(PM_ADC_CTRL_PIN, LOW);   // enable read circuit
+  delay(20);                             // let divider settle
 
-  // Set 11dB attenuation on GPIO1 ONLY (not global — won't affect LoRa/sensors)
-  analogSetPinAttenuation(PM_VBAT_PIN, ADC_11db);
+  // GPIO1: ADC1_CH0. No pinMode or attenuation change needed.
+  // Default 0dB attenuation is correct for VBAT divider output range.
 
+  // First reading
   float v = readVoltage();
-  if (v > 2.0f) {   // sanity: real battery always >2V
+  if (v > 2.0f) {
     _voltage     = v;
     _minVoltSeen = v;
     _maxVoltSeen = v;
@@ -50,43 +54,39 @@ void PowerMonitor::begin() {
     _firstRead   = false;
   }
 
-  // Diagnostic print — shows raw value for calibration
-  uint32_t rawSum = 0;
-  for (int i = 0; i < 8; i++) rawSum += analogRead(PM_VBAT_PIN);
-  uint32_t rawAvg = rawSum / 8;
-  float adcV  = rawAvg / 4095.0f * PM_ADC_FULLSCALE;
-  float vbat  = adcV  * PM_DIVIDER_RATIO;
-  Serial.printf("[PowerMon] Init: GPIO37=LOW GPIO1 raw=%u adcV=%.3fV vbat=%.3fV %d%%\n",
-                rawAvg, adcV, vbat, _percent);
-  Serial.printf("[PowerMon] Status: %s\n", statusString().c_str());
-
-  // Disable after reading to save power (re-enabled in readVoltage each time)
+  // Disable after reading
   digitalWrite(PM_ADC_CTRL_PIN, HIGH);
+
+  // Diagnostic — shows raw value for calibration verification
+  uint32_t rawSum = 0;
+  digitalWrite(PM_ADC_CTRL_PIN, LOW);
+  delay(5);
+  for (int i = 0; i < 8; i++) { rawSum += analogRead(PM_VBAT_PIN); delayMicroseconds(200); }
+  digitalWrite(PM_ADC_CTRL_PIN, HIGH);
+  uint32_t rawAvg = rawSum / 8;
+  float    adcV   = rawAvg / 4095.0f * PM_VREF_0DB;
+  Serial.printf("[PowerMon] Init: GPIO37=LOW raw=%u adcV=%.3fV vbat=%.3fV %d%% | %s\n",
+    rawAvg, adcV, _voltage, _percent, statusString().c_str());
 }
 
 // ─── readVoltage() ────────────────────────────────────────────────────────────
 float PowerMonitor::readVoltage() {
-  // Enable read circuit
+  float scale = (_calScale > 0) ? _calScale : PM_SCALE;
+
   digitalWrite(PM_ADC_CTRL_PIN, LOW);
   delayMicroseconds(500);
-
-  float scale = (_calScale > 0) ? _calScale
-                                 : (PM_ADC_FULLSCALE * PM_DIVIDER_RATIO / 4095.0f);
 
   uint32_t sum = 0;
   for (int i = 0; i < SAMPLE_COUNT; i++) {
     sum += analogRead(PM_VBAT_PIN);
     delayMicroseconds(200);
   }
-  float raw  = (float)sum / SAMPLE_COUNT;
-  float vbat = raw * scale;
 
-  // Disable after reading
-  digitalWrite(PM_ADC_CTRL_PIN, HIGH);
-  return vbat;
+  digitalWrite(PM_ADC_CTRL_PIN, HIGH);  // disable after read
+  return (float)sum / SAMPLE_COUNT * scale;
 }
 
-// ─── voltToPercent() — LiPo 3.7V nominal discharge curve ─────────────────────
+// ─── voltToPercent() — LiPo 3.7V nominal ─────────────────────────────────────
 int PowerMonitor::voltToPercent(float v) const {
   if (v >= 4.20f) return 100;
   if (v >= 4.10f) return 90 + (int)((v-4.10f)/0.10f*10.0f);
@@ -109,8 +109,8 @@ float PowerMonitor::trendV() const {
   float newAvg = 0, oldAvg = 0;
   int half = count / 2;
   for (int i = 0; i < half; i++) {
-    int ni = (_histIdx - 1 - i          + HISTORY_SIZE) % HISTORY_SIZE;
-    int oi = (_histIdx - 1 - (half + i) + HISTORY_SIZE) % HISTORY_SIZE;
+    int ni = (_histIdx-1-i         +HISTORY_SIZE)%HISTORY_SIZE;
+    int oi = (_histIdx-1-(half+i)  +HISTORY_SIZE)%HISTORY_SIZE;
     newAvg += _history[ni];
     oldAvg += _history[oi];
   }
@@ -119,31 +119,17 @@ float PowerMonitor::trendV() const {
 
 // ─── updateState() ───────────────────────────────────────────────────────────
 void PowerMonitor::updateState() {
-  float v     = _voltage;
-  float trend = trendV();
+  float v = _voltage, trend = trendV();
+  if      (v > PM_VOLT_CHARGING)                      _source = PowerSource::USB_CHARGING;
+  else if (v >= PM_VOLT_FULL && trend <= 0.002f)      _source = PowerSource::USB_FULL;
+  else if (trend > 0.008f)                            _source = PowerSource::USB_CHARGING;
+  else                                                 _source = PowerSource::BATTERY;
 
-  if (v > PM_VOLT_CHARGING) {
-    _source = (v >= PM_VOLT_FULL && trend <= 0.002f)
-              ? PowerSource::USB_FULL : PowerSource::USB_CHARGING;
-  } else if (v >= PM_VOLT_FULL && trend <= 0.002f) {
-    _source = PowerSource::USB_FULL;
-  } else if (trend > 0.008f) {
-    _source = PowerSource::USB_CHARGING;
-  } else {
-    _source = PowerSource::BATTERY;
-  }
-
-  if (_source == PowerSource::USB_FULL) {
-    _chargeState = ChargeState::FULL;
-  } else if (_source == PowerSource::USB_CHARGING) {
-    _chargeState = ChargeState::CHARGING;
-  } else if (v <= PM_VOLT_CRITICAL) {
-    _chargeState = ChargeState::BATT_CRITICAL;
-  } else if (v <= PM_VOLT_LOW) {
-    _chargeState = ChargeState::BATT_LOW;
-  } else {
-    _chargeState = ChargeState::DISCHARGING;
-  }
+  if      (_source == PowerSource::USB_FULL)           _chargeState = ChargeState::FULL;
+  else if (_source == PowerSource::USB_CHARGING)       _chargeState = ChargeState::CHARGING;
+  else if (v <= PM_VOLT_CRITICAL)                      _chargeState = ChargeState::BATT_CRITICAL;
+  else if (v <= PM_VOLT_LOW)                           _chargeState = ChargeState::BATT_LOW;
+  else                                                 _chargeState = ChargeState::DISCHARGING;
 }
 
 // ─── updateHealth() ──────────────────────────────────────────────────────────
@@ -163,7 +149,7 @@ void PowerMonitor::sendAlert(const String &msg, const String &sev) {
 
 // ─── process() ───────────────────────────────────────────────────────────────
 void PowerMonitor::process() {
-  if (!_firstRead && millis() - _lastPollMs < _pollMs) return;
+  if (!_firstRead && millis()-_lastPollMs < _pollMs) return;
   _lastPollMs = millis();
 
   float v = readVoltage();
@@ -185,15 +171,15 @@ void PowerMonitor::process() {
 
   if (_chargeState == ChargeState::BATT_LOW && !_lowAlertSent) {
     _lowAlertSent = true;
-    sendAlert("[WARNING] Battery low: " + String(_percent) + "% (" +
-              String(_voltage,2) + "V) — connect USB", SEV_WARNING);
+    sendAlert("[WARNING] Battery low: " + String(_percent) + "% ("
+              + String(_voltage,2) + "V)", SEV_WARNING);
   }
   if (_chargeState != ChargeState::BATT_LOW) _lowAlertSent = false;
 
   if (_chargeState == ChargeState::BATT_CRITICAL && !_criticalAlertSent) {
     _criticalAlertSent = true;
-    sendAlert("[ERROR] Battery CRITICAL: " + String(_percent) + "% (" +
-              String(_voltage,2) + "V)", SEV_ERROR);
+    sendAlert("[ERROR] Battery CRITICAL: " + String(_percent) + "% ("
+              + String(_voltage,2) + "V)", SEV_ERROR);
   }
   if (_chargeState != ChargeState::BATT_CRITICAL) _criticalAlertSent = false;
 
@@ -202,17 +188,16 @@ void PowerMonitor::process() {
 
 // ─── calibrate() ─────────────────────────────────────────────────────────────
 void PowerMonitor::calibrate(float realVoltage) {
-  digitalWrite(PM_ADC_CTRL_PIN, LOW);
-  delay(10);
+  digitalWrite(PM_ADC_CTRL_PIN, LOW); delay(10);
   float rawAvg = 0;
   for (int i = 0; i < 32; i++) { rawAvg += analogRead(PM_VBAT_PIN); delayMicroseconds(200); }
   rawAvg /= 32;
   digitalWrite(PM_ADC_CTRL_PIN, HIGH);
-  float newScale = realVoltage / rawAvg;
-  _calScale = newScale;
-  Serial.printf("[PowerMon] CAL: raw=%.1f realV=%.3fV → scale=%.7f\n",rawAvg,realVoltage,newScale);
-  Serial.printf("[PowerMon] Set PM_ADC_FULLSCALE = %.4f in PowerMonitor.cpp\n",
-                newScale * 4095.0f / PM_DIVIDER_RATIO);
+  _calScale = realVoltage / rawAvg;
+  float newVref = _calScale * 4095.0f / PM_DIVIDER_RATIO;
+  Serial.printf("[PowerMon] CAL: raw=%.1f → realV=%.3fV scale=%.7f\n",
+                rawAvg, realVoltage, _calScale);
+  Serial.printf("[PowerMon] Set PM_VREF_0DB = %.4f in PowerMonitor.cpp\n", newVref);
 }
 
 // ─── statusString() ──────────────────────────────────────────────────────────
@@ -222,11 +207,11 @@ String PowerMonitor::statusString() const {
     (_source == PowerSource::USB_FULL)     ? "USB+Full"     :
     (_source == PowerSource::BATTERY)      ? "Battery"      : "Unknown";
   const char *st =
-    (_chargeState == ChargeState::CHARGING)      ? "CHARGING"    :
-    (_chargeState == ChargeState::FULL)           ? "FULL"        :
-    (_chargeState == ChargeState::DISCHARGING)    ? "DISCHARGING" :
-    (_chargeState == ChargeState::BATT_LOW)       ? "LOW"         :
-    (_chargeState == ChargeState::BATT_CRITICAL)  ? "CRITICAL"    : "UNKNOWN";
+    (_chargeState == ChargeState::CHARGING)     ? "CHARGING"    :
+    (_chargeState == ChargeState::FULL)          ? "FULL"        :
+    (_chargeState == ChargeState::DISCHARGING)   ? "DISCHARGING" :
+    (_chargeState == ChargeState::BATT_LOW)      ? "LOW"         :
+    (_chargeState == ChargeState::BATT_CRITICAL) ? "CRITICAL"    : "UNKNOWN";
   char buf[96];
   snprintf(buf, sizeof(buf), "%.2fV %d%% | %s | %s", _voltage, _percent, src, st);
   return String(buf);
