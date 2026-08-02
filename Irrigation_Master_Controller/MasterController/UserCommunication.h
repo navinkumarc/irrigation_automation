@@ -96,6 +96,8 @@ private:
 
   // Callback for schedule ADD/DEL commands
   std::function<CommandResult(const String&)> scheduleCommandCallback;
+  std::function<String()>                     powerStatusCallback;
+  std::function<String()>                     nodeStatusCallback;
 
   // Admin phone — used by SMS adapter for direct replies
   String adminPhone;
@@ -148,6 +150,10 @@ public:
     { pumpCommandCallback = cb; }
   void setScheduleCommandCallback(std::function<CommandResult(const String&)> cb)
     { scheduleCommandCallback = cb; }
+  // Returns power/battery one-liner for STATUS command
+  void setPowerStatusCallback(std::function<String()> cb) { powerStatusCallback = cb; }
+  // Returns node connection status string for NODES command
+  void setNodeStatusCallback(std::function<String()> cb)  { nodeStatusCallback  = cb; }
 
   // Public entry point for irrigation schedule commands (ISCH / ADD SCHED).
   // Calls the private scheduleCommandCallback so external code never

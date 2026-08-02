@@ -345,7 +345,9 @@ void setup() {
       if (up=="T1 STATUS") return CommandResult(true,"T1",tank1.statusString());
       if (up=="T2 STATUS") return CommandResult(true,"T2",tank2.statusString());
       // Power / battery status
-      if (up=="POWER STATUS"||up=="BAT STATUS"||up=="BATTERY STATUS") {
+      if (up=="POWER STATUS"||up=="POWER"
+       ||up=="BAT STATUS"  ||up=="BAT"
+       ||up=="BATTERY STATUS"||up=="BATTERY") {
         return CommandResult(true,"POWER",
           powerMon.statusString() + "\n" + powerMon.healthString());
       }

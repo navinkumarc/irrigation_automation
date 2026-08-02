@@ -39,13 +39,16 @@ void UserCommunication::onMessageReceived(const ChannelMessage &msg,
 
   String reply = (result.success ? "✓ " : "✗ ") + result.commandType + ": " + result.response;
 
-  // 1. Reply directly on the originating channel (if a reply path exists)
+  // 1. Reply on the originating channel
   if (msg.canReply()) {
     msg.reply(reply);
   }
 
-  // 2. Log to Serial
-  Serial.println("[UserComm] → " + reply);
+  // 2. Log to Serial only if the channel did NOT already reply to Serial
+  //    (Serial channel reply lambda already prints [Serial] → ...)
+  if (msg.channel != "Serial") {
+    Serial.println("[UserComm] → " + reply);
+  }
 }
 
 // ─── sendAlert() ──────────────────────────────────────────────────────────────
@@ -101,6 +104,7 @@ CommandResult UserCommunication::dispatchCommand(const String &raw,
   String cmd = raw; cmd.trim(); cmd.toUpperCase();
 
   if (cmd == "STATUS")           return handleStatusCommand(sys);
+  if (cmd == "NODES")            return handleNodesCommand();
   if (cmd == "DIAGNOSTICS")      return handleDiagnosticsCommand();
   if (cmd == "SCHEDULES")        return handleSchedulesCommand(sys);
   if (cmd == "STOP")             return handleStopCommand(scheduleRunning, scheduleLoaded);
@@ -171,7 +175,35 @@ CommandResult UserCommunication::dispatchCommand(const String &raw,
 // ─── Command handlers ─────────────────────────────────────────────────────────
 
 CommandResult UserCommunication::handleStatusCommand(const SystemStatus &sys) {
-  return CommandResult(true, "STATUS", formatStatusBrief(sys));
+  // Clean device status: uptime, heap, channels, schedule
+  String s;
+  // Uptime
+  uint32_t up = sys.uptimeSeconds;
+  char uptimeBuf[24];
+  snprintf(uptimeBuf, sizeof(uptimeBuf), "%ud%02uh%02um",
+    up/86400, (up%86400)/3600, (up%3600)/60);
+  s += "Uptime:" + String(uptimeBuf) + "\n";
+  // Heap
+  s += "Heap:" + String(sys.freeHeapBytes/1024) + "KB/"
+     + String(sys.totalHeapBytes/1024) + "KB\n";
+  // Schedule
+  s += "Sched:" + String(sys.scheduleRunning
+       ? "RUN(" + sys.currentScheduleId + ")" : "IDLE")
+     + " " + String(sys.enabledSchedules) + "/"
+     + String(sys.totalSchedules) + "active\n";
+  // Channels
+  s += "Ch:" + sys.activeChannelName;
+  s += " LoRa:"   + String(sys.loraUp        ? "OK" : "--");
+  s += " BLE:"    + String(sys.bleConnected   ? "OK" : "--");
+  s += " SMS:"    + String(sys.smsReady       ? "OK" : "--") + "\n";
+  // Network
+  if (sys.ppposUp || sys.wifiUp)
+    s += "Net:" + sys.bearerName + " IP:" + sys.networkIP + "\n";
+  else
+    s += "Net:offline\n";
+  // Power (if power monitor callback set)
+  if (powerStatusCallback) s += powerStatusCallback();
+  return CommandResult(true, "STATUS", s);
 }
 
 CommandResult UserCommunication::handleDiagnosticsCommand() {
@@ -200,6 +232,11 @@ CommandResult UserCommunication::handleStartCommand(const String &schedId) {
 
 CommandResult UserCommunication::handleCheckCommand() {
   return CommandResult(isSystemHealthy(), "CHECK", getHealthStatus());
+}
+
+CommandResult UserCommunication::handleNodesCommand() {
+  if (nodeStatusCallback) return CommandResult(true, "NODES", nodeStatusCallback());
+  return CommandResult(false, "NODES", "Node status not available");
 }
 
 CommandResult UserCommunication::handleNodeCommand(const String &args) {
@@ -357,11 +394,12 @@ String UserCommunication::getHealthStatus() const {
 String UserCommunication::getHelpText() const {
   return
     // ── System ───────────────────────────────────────────────────────
-    "STATUS           system & channel status\n"
-    "STATS            heap & uptime\n"
-    "CHECK            health check\n"
-    "DIAGNOSTICS      full diag (serial only)\n"
-    "RESTART          reboot controller\n"
+    "STATUS    uptime heap channels network power\n"
+    "NODES     connected node controller status\n"
+    "STATS     heap & uptime\n"
+    "CHECK     health check\n"
+    "DIAG      full diagnostic (serial only)\n"
+    "RESTART   reboot controller\n"
     // ── Power / Battery ──────────────────────────────────────────────
     "POWER STATUS     voltage % source charge-state health\n"
     "BAT              alias for POWER STATUS\n"
