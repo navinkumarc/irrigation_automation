@@ -5,8 +5,8 @@
 // ── What the hardware provides ─────────────────────────────────────────────
 //   GPIO1  (ADC1_CH0) — VBAT voltage via 100kΩ + 390kΩ divider to GND
 //                       VBAT_actual = ADC_V * (100+390)/100 = ADC_V * 4.9
-//   GPIO37 (ADC_Ctrl) — Must be HIGH before reading ADC; enables the
-//                       internal ADC power circuit (active HIGH)
+//   GPIO37 (ADC_Ctrl) — HIGH enables VBAT read circuit (p-channel MOSFET)
+//                       HIGH = MOSFET gate low enough to turn ON
 //   USB VBUS          — Not on any ESP32 GPIO. Inferred from voltage:
 //                         voltage > 4.25V or sustained rise → USB present
 //   CHRG pin (TP4054) — Connected to orange LED only, NOT to any GPIO
@@ -46,9 +46,9 @@
 #define PM_DIVIDER_RATIO   4.9f
 
 // ── ADC_Ctrl polarity (GPIO37) ───────────────────────────────────────────
-// AO7801 MOSFET gate: LOW = ON (connects divider) / HIGH = OFF (floats)
-// Active LOW — previous code had this wrong (was HIGH)
-#define PM_ADC_CTRL_ACTIVE LOW
+// AO7801 p-channel MOSFET: HIGH gate signal → device ON → divider live
+// Set HIGH before reading, can be left HIGH continuously
+#define PM_ADC_CTRL_ACTIVE HIGH
 
 // ── Battery thresholds (LiPo 3.7V nominal) ─────────────────────────────
 #define PM_VOLT_FULL       4.20f  // 100% — also USB_FULL threshold
@@ -101,9 +101,10 @@ class PowerMonitor {
   bool          _criticalAlertSent = false;
 
   // ── Poll interval ────────────────────────────────────────────────────────
-  unsigned long _pollMs            = 30000; // 30s default
+  unsigned long _pollMs            = 30000;
   unsigned long _lastPollMs        = 0;
   bool          _firstRead         = true;
+  float         _calScale          = 0.0f;  // 0 = use PM_SCALE_FACTOR
 
   using AlertCb = std::function<void(const String&, const String&)>;
   AlertCb _alert;
@@ -126,6 +127,8 @@ public:
 
   // ── Background — call every loop() ───────────────────────────────────────
   void process();
+  // Calibrate with measured real voltage (multimeter reading)
+  void calibrate(float realVoltage);
 
   // ── Accessors ────────────────────────────────────────────────────────────
   float       voltage()     const { return _voltage; }

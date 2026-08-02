@@ -1,116 +1,115 @@
 // PowerMonitor.cpp  —  Power source and battery monitoring
 // Heltec WiFi LoRa 32 V3 (ESP32-S3)
 //
-// ── Hardware facts (from schematic) ──────────────────────────────────────────
-//   GPIO1  = VBAT_READ via 100kΩ(top) + 390kΩ(bottom) divider
-//            VBAT_actual = ADC_V × (100+390)/100 = ADC_V × 4.9
+// ── GPIO37 (ADC_Ctrl / Vext_Ctrl) ────────────────────────────────────────────
+//   Controls the p-channel MOSFET (AO7801) that gates the VBAT read circuit.
+//   Heltec V3 confirmed behaviour:
+//     GPIO37 HIGH → MOSFET ON  → VBAT divider connected → valid ADC read
+//     GPIO37 LOW  → MOSFET OFF → divider disconnected   → ADC floats low
+//   Note: must be set HIGH only during read, then restored to avoid
+//   interfering with Vext / sensor power rail sharing.
 //
-//   GPIO37 = ADC_Ctrl — drives gate of AO7801 MOSFET (active LOW)
-//            LOW  = MOSFET ON  → divider connected → valid ADC reading
-//            HIGH = MOSFET OFF → divider floating  → ADC reads garbage
-//            *** Previous code had this BACKWARDS (HIGH to enable) ***
+// ── GPIO1 (ADC1_CH0 / VBAT_Read) ─────────────────────────────────────────────
+//   VBAT voltage divider output: R_top=390kΩ, R_bot=100kΩ
+//   ADC_V = VBAT × 100/(100+390) = VBAT × 0.2041
+//   VBAT  = ADC_V × (100+390)/100 = ADC_V × 4.9
 //
-//   TP4054 charger:
-//     - When USB present + battery charging: VBAT rises toward 4.2V
-//     - When USB present + no battery:       VBAT line floats ~3.7-3.9V
-//       (charger output idles near CV threshold) — looks like 50% battery!
-//     - CHRG pin drives LED only — not accessible to MCU
+// ── Why NOT to use esp_adc_cal or analogSetAttenuation ───────────────────────
+//   esp_adc_cal on ESP32-S3 returns wrong values when eFuse data is absent
+//   (defaults to a fixed Vref that doesn't match actual hardware).
+//   analogSetAttenuation() sets ALL ADC channels globally — breaks LoRa.
+//   Solution: use raw analogRead with 0dB (default) attenuation.
+//   At 0dB, ADC input range is 0-1.1V. VBAT divider gives 0.65-0.86V
+//   for a 3.2-4.2V battery — perfectly within 0dB range. No attenuation needed.
 //
-// ── USB detection strategy ────────────────────────────────────────────────────
-//   We CANNOT reliably detect USB without a battery from voltage alone.
-//   Best we can do:
-//     v > 4.20V  → definitely USB + charging (battery above full threshold)
-//     v rising   → USB charging (regardless of absolute voltage)
-//     v stable at 4.20V → USB + full
-//     v falling or stable below 4.20V → assume battery
-//   If no battery fitted, readings will be unreliable (~3.7V floating).
-//   The display will show the ADC reading honestly with a note.
+// ── Calibration constant ─────────────────────────────────────────────────────
+//   ESP32-S3 ADC: 12-bit (0-4095), Vref ≈ 1.1V (typical)
+//   ADC_V = raw / 4095.0 × 1.1
+//   VBAT  = ADC_V × 4.9 = raw × 1.1 × 4.9 / 4095 = raw × 0.001316
+//   PM_SCALE_FACTOR = 1.1 × 4.9 / 4095 = 0.001316
 
 #include "PowerMonitor.h"
-#include <esp_adc_cal.h>
 
-static esp_adc_cal_characteristics_t _adcChars;
+// ── ADC scale factor ──────────────────────────────────────────────────────────
+// VBAT (V) = raw_adc × PM_SCALE_FACTOR
+// Tune PM_ADC_VREF if readings are consistently off:
+//   If reading 3.50V but real voltage is 3.70V → increase VREF: 1.1 × (3.70/3.50) = 1.163
+#define PM_ADC_VREF       1.1f    // ESP32-S3 internal Vref (typical)
+#define PM_SCALE_FACTOR   (PM_ADC_VREF * PM_DIVIDER_RATIO / 4095.0f)
 
 // ─── begin() ─────────────────────────────────────────────────────────────────
 void PowerMonitor::begin() {
-  // ADC_Ctrl (GPIO37): active LOW — pull LOW to connect the voltage divider
-  // Previous code had HIGH which disconnected the divider (wrong!)
+  // GPIO37: HIGH enables the VBAT read circuit (p-channel MOSFET gate)
   pinMode(PM_ADC_CTRL_PIN, OUTPUT);
-  digitalWrite(PM_ADC_CTRL_PIN, LOW);   // ← CORRECTED: LOW = enable ADC circuit
-  delay(10);  // let divider settle
+  digitalWrite(PM_ADC_CTRL_PIN, HIGH);
+  delay(20);  // let divider settle
 
-  // Configure ADC: 12-bit, 11dB attenuation (0-3.9V input range)
-  analogSetAttenuation(ADC_11db);
-  analogSetWidth(12);
-
-  // Calibrate ADC using eFuse values baked into ESP32-S3
-  esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11,
-                            ADC_WIDTH_BIT_12, 1100, &_adcChars);
+  // GPIO1: ADC input — no pinMode or attenuation change needed
+  // Default 0dB attenuation: 0-1.1V range, correct for VBAT divider output
 
   // First reading
-  delay(50);
-  _voltage = readVoltage();
-  if (_voltage > 0.5f) {
-    _minVoltSeen = _voltage;
-    _maxVoltSeen = _voltage;
-    _history[0]  = _voltage;
+  float v = readVoltage();
+  if (v > 1.0f) {  // sanity: real battery is always >1V
+    _voltage     = v;
+    _minVoltSeen = v;
+    _maxVoltSeen = v;
+    _history[0]  = v;
     _histIdx     = 1;
-    _percent     = voltToPercent(_voltage);
+    _percent     = voltToPercent(v);
     updateState();
     _firstRead   = false;
   }
 
-  Serial.printf("[PowerMon] Init: %.3fV %d%% | %s | %s\n",
-    _voltage, _percent,
-    isOnUSB() ? "USB" : "Battery",
-    _chargeState == ChargeState::CHARGING   ? "CHARGING"    :
-    _chargeState == ChargeState::FULL        ? "FULL"        :
-    _chargeState == ChargeState::DISCHARGING ? "DISCHARGING" :
-    _chargeState == ChargeState::BATT_LOW    ? "LOW"         :
-    _chargeState == ChargeState::BATT_CRITICAL ? "CRITICAL"  : "UNKNOWN");
+  // Print raw ADC for diagnostic
+  uint32_t rawSum = 0;
+  for (int i = 0; i < 8; i++) rawSum += analogRead(PM_VBAT_PIN);
+  uint32_t rawAvg = rawSum / 8;
+  Serial.printf("[PowerMon] Init: raw=%u → %.3fV %d%% | %s\n",
+    rawAvg, _voltage, _percent, statusString().c_str());
 }
 
 // ─── readVoltage() ────────────────────────────────────────────────────────────
 float PowerMonitor::readVoltage() {
-  // Use esp_adc_cal for accurate millivolt reading
-  uint32_t sumMv = 0;
+  // Ensure ADC_Ctrl is HIGH (may have been changed elsewhere)
+  digitalWrite(PM_ADC_CTRL_PIN, HIGH);
+  delayMicroseconds(500);
+
+  // Average SAMPLE_COUNT readings to reduce noise
+  uint32_t sum = 0;
   for (int i = 0; i < SAMPLE_COUNT; i++) {
-    uint32_t raw = analogRead(PM_VBAT_PIN);
-    sumMv += esp_adc_cal_raw_to_voltage(raw, &_adcChars);
+    sum += analogRead(PM_VBAT_PIN);
     delayMicroseconds(200);
   }
-  float adcMv  = (float)sumMv / SAMPLE_COUNT;
-  float vbat   = (adcMv / 1000.0f) * PM_DIVIDER_RATIO;
+  float raw  = (float)sum / SAMPLE_COUNT;
+  float vbat = raw * PM_SCALE_FACTOR;
   return vbat;
 }
 
-// ─── voltToPercent() — LiPo discharge curve ──────────────────────────────────
+// ─── voltToPercent() — LiPo 3.7V nominal discharge curve ─────────────────────
 int PowerMonitor::voltToPercent(float v) const {
-  // Only valid for battery voltage 3.2-4.2V
-  // If v > 4.2V battery is charging via USB
   if (v >= 4.20f) return 100;
-  if (v >= 4.10f) return 90  + (int)((v - 4.10f) / 0.10f * 10.0f);
-  if (v >= 4.00f) return 80  + (int)((v - 4.00f) / 0.10f * 10.0f);
-  if (v >= 3.90f) return 70  + (int)((v - 3.90f) / 0.10f * 10.0f);
-  if (v >= 3.80f) return 60  + (int)((v - 3.80f) / 0.10f * 10.0f);
-  if (v >= 3.70f) return 50  + (int)((v - 3.70f) / 0.10f * 10.0f);
-  if (v >= 3.60f) return 40  + (int)((v - 3.60f) / 0.10f * 10.0f);
-  if (v >= 3.50f) return 25  + (int)((v - 3.50f) / 0.10f * 15.0f);
-  if (v >= 3.40f) return 15  + (int)((v - 3.40f) / 0.10f * 10.0f);
-  if (v >= 3.30f) return 5   + (int)((v - 3.30f) / 0.10f * 10.0f);
-  if (v >= 3.20f) return (int)((v - 3.20f) / 0.10f * 5.0f);
+  if (v >= 4.10f) return 90 + (int)((v-4.10f)/0.10f*10.0f);
+  if (v >= 4.00f) return 80 + (int)((v-4.00f)/0.10f*10.0f);
+  if (v >= 3.90f) return 70 + (int)((v-3.90f)/0.10f*10.0f);
+  if (v >= 3.80f) return 60 + (int)((v-3.80f)/0.10f*10.0f);
+  if (v >= 3.70f) return 50 + (int)((v-3.70f)/0.10f*10.0f);
+  if (v >= 3.60f) return 40 + (int)((v-3.60f)/0.10f*10.0f);
+  if (v >= 3.50f) return 25 + (int)((v-3.50f)/0.10f*15.0f);
+  if (v >= 3.40f) return 15 + (int)((v-3.40f)/0.10f*10.0f);
+  if (v >= 3.30f) return  5 + (int)((v-3.30f)/0.10f*10.0f);
+  if (v >= 3.20f) return     (int)((v-3.20f)/0.10f*5.0f);
   return 0;
 }
 
-// ─── trendV() — V/sample change over history window ──────────────────────────
+// ─── trendV() — V/sample rate of change ──────────────────────────────────────
 float PowerMonitor::trendV() const {
   int count = _histFull ? HISTORY_SIZE : _histIdx;
   if (count < 4) return 0.0f;
   float newAvg = 0, oldAvg = 0;
   int half = count / 2;
   for (int i = 0; i < half; i++) {
-    int ni = (_histIdx - 1 - i           + HISTORY_SIZE) % HISTORY_SIZE;
-    int oi = (_histIdx - 1 - (half + i)  + HISTORY_SIZE) % HISTORY_SIZE;
+    int ni = (_histIdx - 1 - i          + HISTORY_SIZE) % HISTORY_SIZE;
+    int oi = (_histIdx - 1 - (half + i) + HISTORY_SIZE) % HISTORY_SIZE;
     newAvg += _history[ni];
     oldAvg += _history[oi];
   }
@@ -122,28 +121,24 @@ void PowerMonitor::updateState() {
   float v     = _voltage;
   float trend = trendV();
 
-  // ── Power source ────────────────────────────────────────────────────────
-  // USB presence detection:
-  //   > 4.25V: TP4054 is actively charging — USB definitely present
-  //   Rising trend: charging from USB (even if not yet above 4.25V)
-  //   Stable at 4.20V+: USB present, battery full
-  //   Otherwise: running on battery
+  // USB detection:
+  //   > 4.25V         → TP4054 charging above cell max → USB present
+  //   >= 4.20V stable → battery full, USB still connected
+  //   rising trend    → charging from USB
+  //   otherwise       → battery power
   if (v > PM_VOLT_CHARGING) {
-    // Clearly above battery max — USB charging
     _source = (v >= PM_VOLT_FULL && trend <= 0.002f)
               ? PowerSource::USB_FULL
               : PowerSource::USB_CHARGING;
   } else if (v >= PM_VOLT_FULL && trend <= 0.002f) {
-    // At 4.20V stable — USB full
     _source = PowerSource::USB_FULL;
   } else if (trend > 0.008f) {
-    // Voltage clearly rising — USB charging
     _source = PowerSource::USB_CHARGING;
   } else {
     _source = PowerSource::BATTERY;
   }
 
-  // ── Charge state ─────────────────────────────────────────────────────────
+  // Charge state
   if (_source == PowerSource::USB_FULL) {
     _chargeState = ChargeState::FULL;
   } else if (_source == PowerSource::USB_CHARGING) {
@@ -159,13 +154,11 @@ void PowerMonitor::updateState() {
 
 // ─── updateHealth() ──────────────────────────────────────────────────────────
 void PowerMonitor::updateHealth(float v) {
-  if (v < _minVoltSeen && v > 3.0f) _minVoltSeen = v;  // ignore ADC noise
+  if (v > 3.0f && v < _minVoltSeen) _minVoltSeen = v;
   if (v > _maxVoltSeen)              _maxVoltSeen = v;
   bool lowNow = (v <= PM_VOLT_LOW && _source == PowerSource::BATTERY);
-  if (lowNow && !_wasLow) { _lowStartMs = millis(); _wasLow = true;  }
-  else if (!lowNow && _wasLow) {
-    _timeBelowLowMs += millis() - _lowStartMs; _wasLow = false;
-  }
+  if ( lowNow && !_wasLow) { _lowStartMs = millis(); _wasLow = true; }
+  if (!lowNow &&  _wasLow) { _timeBelowLowMs += millis() - _lowStartMs; _wasLow = false; }
 }
 
 // ─── sendAlert() ─────────────────────────────────────────────────────────────
@@ -180,12 +173,11 @@ void PowerMonitor::process() {
   _lastPollMs = millis();
 
   float v = readVoltage();
-  if (v < 0.5f) return;
+  if (v < 1.0f) return;  // below 1V = ADC not ready or hardware issue
 
   _voltage = v;
   _percent = voltToPercent(v);
 
-  // History ring buffer
   _history[_histIdx % HISTORY_SIZE] = v;
   _histIdx++;
   if (_histIdx >= HISTORY_SIZE) _histFull = true;
@@ -194,32 +186,40 @@ void PowerMonitor::process() {
   updateHealth(v);
   updateState();
 
-  Serial.printf("[PowerMon] %.3fV %d%% | %s | %s | trend:%+.4f\n",
+  Serial.printf("[PowerMon] %.3fV %d%% | %s | trend:%+.4f\n",
     _voltage, _percent,
-    isOnUSB() ? "USB" : "Battery",
-    _chargeState == ChargeState::CHARGING    ? "CHARGING"    :
-    _chargeState == ChargeState::FULL         ? "FULL"        :
-    _chargeState == ChargeState::DISCHARGING  ? "DISCHARGING" :
-    _chargeState == ChargeState::BATT_LOW     ? "LOW"         :
-    _chargeState == ChargeState::BATT_CRITICAL? "CRITICAL"    : "UNKNOWN",
-    trendV());
+    isOnUSB() ? "USB" : "Battery", trendV());
 
-  // Alerts — only on state change
   if (_chargeState == ChargeState::BATT_LOW && !_lowAlertSent) {
     _lowAlertSent = true;
     sendAlert("[WARNING] Battery low: " + String(_percent) + "% ("
-              + String(_voltage, 2) + "V) — connect USB", SEV_WARNING);
+              + String(_voltage,2) + "V) — connect USB", SEV_WARNING);
   }
   if (_chargeState != ChargeState::BATT_LOW) _lowAlertSent = false;
 
   if (_chargeState == ChargeState::BATT_CRITICAL && !_criticalAlertSent) {
     _criticalAlertSent = true;
     sendAlert("[ERROR] Battery CRITICAL: " + String(_percent) + "% ("
-              + String(_voltage, 2) + "V) — shutting down soon", SEV_ERROR);
+              + String(_voltage,2) + "V)", SEV_ERROR);
   }
   if (_chargeState != ChargeState::BATT_CRITICAL) _criticalAlertSent = false;
 
   _firstRead = false;
+}
+
+// ─── calibrate() — call from Serial to find real scale factor ─────────────────
+// Measure actual VBAT with a multimeter, then send: POWER CAL x.xx
+// This adjusts PM_ADC_VREF so readings match reality.
+void PowerMonitor::calibrate(float realVoltage) {
+  float rawAvg = 0;
+  for (int i = 0; i < 32; i++) { rawAvg += analogRead(PM_VBAT_PIN); delayMicroseconds(200); }
+  rawAvg /= 32;
+  float measuredScale = realVoltage / rawAvg;
+  Serial.printf("[PowerMon] CAL: raw=%.1f realV=%.3f → scale=%.6f\n",
+                rawAvg, realVoltage, measuredScale);
+  Serial.printf("[PowerMon] Set PM_ADC_VREF = %.4f in PowerMonitor.cpp\n",
+                measuredScale * 4095.0f / PM_DIVIDER_RATIO);
+  _calScale = measuredScale;
 }
 
 // ─── statusString() ──────────────────────────────────────────────────────────
@@ -228,14 +228,12 @@ String PowerMonitor::statusString() const {
     (_source == PowerSource::USB_CHARGING) ? "USB+Charging" :
     (_source == PowerSource::USB_FULL)     ? "USB+Full"     :
     (_source == PowerSource::BATTERY)      ? "Battery"      : "Unknown";
-
   const char *st =
     (_chargeState == ChargeState::CHARGING)      ? "CHARGING"    :
     (_chargeState == ChargeState::FULL)           ? "FULL"        :
     (_chargeState == ChargeState::DISCHARGING)    ? "DISCHARGING" :
     (_chargeState == ChargeState::BATT_LOW)       ? "LOW"         :
     (_chargeState == ChargeState::BATT_CRITICAL)  ? "CRITICAL"    : "UNKNOWN";
-
   char buf[96];
   snprintf(buf, sizeof(buf), "%.2fV %d%% | %s | %s", _voltage, _percent, src, st);
   return String(buf);
@@ -243,17 +241,14 @@ String PowerMonitor::statusString() const {
 
 // ─── healthString() ──────────────────────────────────────────────────────────
 String PowerMonitor::healthString() const {
-  const char *health =
+  const char *h =
     (_minVoltSeen >= 3.60f) ? "GOOD"     :
     (_minVoltSeen >= 3.40f) ? "FAIR"     :
     (_minVoltSeen >= 3.20f) ? "POOR"     : "DEGRADED";
-
   unsigned long lowSec = (_timeBelowLowMs +
-    (_wasLow ? millis() - _lowStartMs : 0)) / 1000;
-
+    (_wasLow ? millis()-_lowStartMs : 0)) / 1000;
   char buf[120];
-  snprintf(buf, sizeof(buf),
-    "Health:%s | MinV:%.2fV MaxV:%.2fV | TimeLow:%lus",
-    health, _minVoltSeen, _maxVoltSeen, lowSec);
+  snprintf(buf,sizeof(buf),"Health:%s | MinV:%.2fV MaxV:%.2fV | TimeLow:%lus",
+    h, _minVoltSeen, _maxVoltSeen, lowSec);
   return String(buf);
 }

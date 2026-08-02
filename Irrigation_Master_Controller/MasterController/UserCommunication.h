@@ -99,6 +99,8 @@ private:
   std::function<String()>                     powerStatusCallback;
   std::function<String()>                     nodeStatusCallback;
   std::function<String(const String&)>        nodePowerCallback;
+  std::function<void(float)>                  powerCalibrateCallback;
+  std::function<String()>                     powerRawCallback;
 
   // Admin phone — used by SMS adapter for direct replies
   String adminPhone;
@@ -159,6 +161,8 @@ public:
   void setNodeStatusCallback(std::function<String()> cb)  { nodeStatusCallback  = cb; }
   // Node power query callback: takes nodeId list string, returns formatted string
   void setNodePowerCallback(std::function<String(const String&)> cb) { nodePowerCallback = cb; }
+  void setPowerCalibrateCallback(std::function<void(float)> cb)      { powerCalibrateCallback = cb; }
+  void setPowerRawCallback(std::function<String()> cb)               { powerRawCallback = cb; }
 
   // Public entry point for irrigation schedule commands (ISCH / ADD SCHED).
   // Calls the private scheduleCommandCallback so external code never

@@ -244,6 +244,22 @@ CommandResult UserCommunication::handlePowerCommand(const String &raw) {
   String args = (up.length() > 6) ? up.substring(6) : "";
   args.trim();
 
+  // POWER CAL x.xx — calibrate with real measured voltage
+  if (args.startsWith("CAL ")) {
+    if (powerCalibrateCallback) {
+      float v = args.substring(4).toFloat();
+      powerCalibrateCallback(v);
+      return CommandResult(true,"POWER","Calibration done. Check Serial output.");
+    }
+    return CommandResult(false,"POWER","Cal callback not set");
+  }
+
+  // POWER RAW — print raw ADC for diagnostic
+  if (args == "RAW") {
+    if (powerRawCallback) return CommandResult(true,"POWER",powerRawCallback());
+    return CommandResult(false,"POWER","Raw callback not set");
+  }
+
   bool wantMaster = false;
   String nodeList = "";  // comma-sep nodeIds e.g. "1,2,7"
 
