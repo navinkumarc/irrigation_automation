@@ -455,46 +455,47 @@ String UserCommunication::getHealthStatus() const {
 
 // ─── Help text ────────────────────────────────────────────────────────────────
 String UserCommunication::getHelpText() const {
-  return
-    // ── System ───────────────────────────────────────────────────────
-    "STATUS    uptime heap channels network power\n"
-    "NODES     connected node controller status\n"
-    "STATS     heap & uptime\n"
-    "CHECK     health check\n"
-    "DIAG      full diagnostic (serial only)\n"
-    "RESTART   reboot controller\n"
-    // ── Power / Battery ──────────────────────────────────────────────
-    "POWER STATUS     voltage % source charge-state health\n"
-    "BAT              alias for POWER STATUS\n"
-    // ── Fill groups (WTT) ─────────────────────────────────────────────
-    "FG1 ON|OFF|AUTO  fill group 1 control\n"
-    "FG2 ON|OFF|AUTO  fill group 2 control\n"
-    "FG1 STATUS       FG1:RUNNING(AUTO) T1:FILLING 45s\n"
-    "T1 STATUS        tank 1 level (EMPTY/FILLING/FULL)\n"
-    "T2 STATUS        tank 2 level\n"
-    // ── Irrigation groups ─────────────────────────────────────────────
-    "G1 ON|OFF        irrigation pump 1 manual\n"
-    "G2 ON|OFF        irrigation pump 2 manual\n"
-    "G1 STATUS        pump state + open valves\n"
-    "PUMP STATUS      all pumps + tanks\n"
-    // ── Irrigation schedule ───────────────────────────────────────────
-    "SCHEDULES        list all irrigation schedules\n"
-    "ISCH <grp> I:<id>,T:HH:MM,R:D|W|O[,D:mask],Q:n.v.m-...\n"
-    "ISDL <id>        delete irrigation schedule\n"
-    "START <id>       run schedule now\n"
-    "STOP             stop running sequence\n"
-    // ── Pump schedule (WTT / IPC) ─────────────────────────────────────
-    "WSCH FG1 I:<id>,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
-    "WSCH LIST        list pump schedules\n"
-    "WSCH STATUS      next run times\n"
-    "DEL FG1:<id>     delete pump schedule\n"
-    "DIS/ENA FG1:<id> disable/enable pump schedule\n"
-    // ── Node ─────────────────────────────────────────────────────────
-    "NODE <id> <cmd>  send command to node\n"
-    // ── Setup (Serial only) ───────────────────────────────────────────
-    "SETUP WTT ID:FG1,W:W1,T:T1  create fill group\n"
-    "SETUP IRR ID:IG1,G:G1,M:1   create irrigation group\n"
-    "SETUP NODE IG1,N:1,V:2,3    add node to group\n"
-    "SETUP SHOW / SETUP DEL <id>\n"
-    "HELP             this list\n";
+  return String(
+  // ── Device ─────────────────────────────
+  "STATUS          device info & channels\n"
+  "STATS           heap & uptime\n"
+  "CHECK           health check\n"
+  "RESTART         reboot\n"
+  // ── Power ──────────────────────────────
+  "POWER           master pwr+battery+live nodes\n"
+  "POWER M         master only\n"
+  "POWER N1        node 1 power\n"
+  "POWER N1,N2     nodes 1 & 2 power\n"
+  "POWER M N1,N2   master + nodes\n"
+  // ── Water-to-Tank ───────────────────────
+  "FG1 ON|OFF|AUTO fill group 1 (W1+T1)\n"
+  "FG2 ON|OFF|AUTO fill group 2 (W2+T2)\n"
+  "FG1 STATUS      FG1:RUNNING(AUTO) T1:FILLING\n"
+  "T1 STATUS       tank level EMPTY|FILLING|FULL\n"
+  // ── Irrigation ──────────────────────────
+  "G1 ON|OFF       irrigation pump 1\n"
+  "G2 ON|OFF       irrigation pump 2\n"
+  "PUMP STATUS     all pumps & tanks\n"
+  "NODES           connected nodes status\n"
+  // ── Irrigation Schedule ─────────────────
+  "SCHEDULES       list all\n"
+  "ISCH IG1 I:id,T:HH:MM,R:W,D:42,Q:n.v.m\n"
+  "ISDL <id>       delete\n"
+  "START <id>      run now\n"
+  "STOP            stop sequence\n"
+  // ── Fill/Pump Schedule ──────────────────
+  "WSCH FG1 I:id,T:HH:MM,R:D,M:90\n"
+  "WSCH LIST       list\n"
+  "WSCH STATUS     next runs\n"
+  "DEL FG1:id      delete\n"
+  "DIS|ENA FG1:id  disable|enable\n"
+  // ── Node ────────────────────────────────
+  "NODE <id> <cmd> send to node\n"
+  // ── Setup (Serial only) ─────────────────
+  "SETUP IRR ID:IG1,G:G1,M:1\n"
+  "SETUP NODE IG1,N:1,V:2,3\n"
+  "SETUP WTT ID:FG1,W:W1,T:T1\n"
+  "SETUP SHOW|DEL <id>\n"
+  "HELP            this list\n"
+  );
 }
