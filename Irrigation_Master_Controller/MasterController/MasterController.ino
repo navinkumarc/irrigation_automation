@@ -22,6 +22,7 @@
 #include "TankManager.h"       // Tank level sensor manager
 #include "WaterToTankController.h"    // WaterToTankController = WSP pump + tank
 #include "ProcessConfig.h"     // Process group config structs
+#include "PowerMonitor.h"      // USB/battery power monitoring
 #include "PumpScheduleManager.h" // Schedule-based pump control
 #include "IrrigationSequencer.h" // Irrigation sequence execution engine
 
@@ -77,6 +78,7 @@ IPController    ipcCtrl ("G1", IPC_PIN,  IPC_ACTIVE_HIGH);  // G1 relay → J2-1
 IPController    ipcCtrl2("G2", IPC2_PIN, IPC2_ACTIVE_HIGH); // G2 relay → J2-14 GPIO48
 PumpScheduleManager pumpSched;   // Pump schedule manager
 IrrigationSequencer irrigSeq;    // Irrigation sequence engine
+PowerMonitor        powerMon;    // USB / battery power monitor
 CommManager     commMgr;        // The only communication object in this file
 
 #if ENABLE_DISPLAY
@@ -342,6 +344,11 @@ void setup() {
       // Tank status
       if (up=="T1 STATUS") return CommandResult(true,"T1",tank1.statusString());
       if (up=="T2 STATUS") return CommandResult(true,"T2",tank2.statusString());
+      // Power / battery status
+      if (up=="POWER STATUS"||up=="BAT STATUS"||up=="BATTERY STATUS") {
+        return CommandResult(true,"POWER",
+          powerMon.statusString() + "\n" + powerMon.healthString());
+      }
       // G1/G2 — irrigation pump commands
       if (up=="G1 ON")    { ipcCtrl.setMode(PumpMode::MANUAL);  ipcCtrl.start("cmd");  return CommandResult(true,"G1",ipcCtrl.statusString()); }
       if (up=="G1 OFF")   { ipcCtrl.stop("cmd");                               return CommandResult(true,"G1",ipcCtrl.statusString()); }
@@ -369,7 +376,7 @@ void setup() {
       }
       return CommandResult(false, "PUMP",
         "FG1|FG2 ON|OFF|AUTO|STATUS  G1|G2 ON|OFF|STATUS\n"
-        "T1|T2 STATUS  PUMP STATUS\n"
+        "T1|T2 STATUS  PUMP STATUS  POWER STATUS\n"
         "WSCH FG1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
         "ISCH G1 I:id,T:HH:MM,R:W,D:42,Q:n.v.min-n.v.min\n"
         "DEL/DIS/ENA FG1:id | WSCH LIST|STATUS");
@@ -417,6 +424,10 @@ void setup() {
   ipcCtrl2.begin();
   ipcCtrl2.setMinOpenValves(IPC_MIN_OPEN_VALVES);
   ipcCtrl2.setAlertCallback([](const String &m, const String &s) { commMgr.sendAlert(m, s); });
+
+  powerMon.begin();
+  powerMon.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
+  powerMon.setPollInterval(60000);  // read every 60s
 
   irrigSeq.init(commMgr.getNodeComm(), &ipcCtrl, commMgr.getUserComm());
   irrigSeq.setMinOpenValves(IPC_MIN_OPEN_VALVES);
