@@ -132,6 +132,8 @@ public:
   void process();
   // Calibrate with measured real voltage (multimeter reading)
   void calibrate(float realVoltage);
+  // Test both GPIO37 polarities, report raw ADC for each
+  String diagnose();
 
   // ── Accessors ────────────────────────────────────────────────────────────
   float       voltage()     const { return _voltage; }

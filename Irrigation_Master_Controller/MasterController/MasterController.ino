@@ -447,14 +447,7 @@ void setup() {
     powerMon.calibrate(realV);
   });
   commMgr.getUserComm()->setPowerRawCallback([]() -> String {
-    uint32_t rawSum = 0;
-    for (int i = 0; i < 16; i++) rawSum += analogRead(PM_VBAT_PIN);
-    uint32_t rawAvg = rawSum / 16;
-    float adcV = rawAvg / 4095.0f * 1.1f;
-    float vbat = adcV * 4.9f;
-    char buf[80];
-    snprintf(buf,sizeof(buf),"raw=%u adcV=%.3fV vbat=%.3fV",rawAvg,adcV,vbat);
-    return String(buf);
+    return powerMon.diagnose();   // tests LOW / HIGH / FLOAT on GPIO37
   });
   commMgr.getUserComm()->setNodePowerCallback([](const String &nodeIds) -> String {
     auto *nc = commMgr.getNodeComm();

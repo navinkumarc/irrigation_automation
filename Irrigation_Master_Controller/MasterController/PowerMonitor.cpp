@@ -41,18 +41,17 @@ void PowerMonitor::begin() {
   // GPIO1: ADC1_CH0. No pinMode or attenuation change needed.
   // Default 0dB attenuation is correct for VBAT divider output range.
 
-  // First reading
+  // First reading — always store it, even if implausible, so the
+  // reported value reflects what the ADC actually measured.
   float v = readVoltage();
-  if (v > 2.0f) {
-    _voltage     = v;
-    _minVoltSeen = v;
-    _maxVoltSeen = v;
-    _history[0]  = v;
-    _histIdx     = 1;
-    _percent     = voltToPercent(v);
-    updateState();
-    _firstRead   = false;
-  }
+  _voltage     = v;
+  _minVoltSeen = v;
+  _maxVoltSeen = v;
+  _history[0]  = v;
+  _histIdx     = 1;
+  _percent     = voltToPercent(v);
+  updateState();
+  _firstRead   = false;
 
   // Disable after reading
   digitalWrite(PM_ADC_CTRL_PIN, HIGH);
@@ -134,8 +133,9 @@ void PowerMonitor::updateState() {
 
 // ─── updateHealth() ──────────────────────────────────────────────────────────
 void PowerMonitor::updateHealth(float v) {
-  if (v > 3.0f && v < _minVoltSeen) _minVoltSeen = v;
-  if (v > _maxVoltSeen)              _maxVoltSeen = v;
+  if (v < 2.0f) return;   // implausible — do not pollute health stats
+  if (v < _minVoltSeen) _minVoltSeen = v;
+  if (v > _maxVoltSeen) _maxVoltSeen = v;
   bool lowNow = (v <= PM_VOLT_LOW && _source == PowerSource::BATTERY);
   if ( lowNow && !_wasLow) { _lowStartMs = millis(); _wasLow = true; }
   if (!lowNow &&  _wasLow) { _timeBelowLowMs += millis()-_lowStartMs; _wasLow = false; }
@@ -153,7 +153,6 @@ void PowerMonitor::process() {
   _lastPollMs = millis();
 
   float v = readVoltage();
-  if (v < 2.0f) return;
 
   _voltage = v;
   _percent = voltToPercent(v);
@@ -197,6 +196,52 @@ void PowerMonitor::process() {
   _firstRead = false;
 }
 
+
+// ─── diagnose() — test both GPIO37 polarities and report raw ADC ─────────────
+// Run this when readings look wrong. Whichever polarity gives a raw value in
+// the plausible band (roughly 2400-3600 for a 3.2-4.2V battery) is correct.
+String PowerMonitor::diagnose() {
+  auto sample = [&]() -> uint32_t {
+    uint32_t s = 0;
+    for (int i = 0; i < 16; i++) { s += analogRead(PM_VBAT_PIN); delayMicroseconds(200); }
+    return s / 16;
+  };
+
+  pinMode(PM_ADC_CTRL_PIN, OUTPUT);
+
+  digitalWrite(PM_ADC_CTRL_PIN, LOW);
+  delay(50);
+  uint32_t rawLow = sample();
+
+  digitalWrite(PM_ADC_CTRL_PIN, HIGH);
+  delay(50);
+  uint32_t rawHigh = sample();
+
+  // Also try leaving the pin as a floating input (let the board pull-up decide)
+  pinMode(PM_ADC_CTRL_PIN, INPUT);
+  delay(50);
+  uint32_t rawFloat = sample();
+
+  // Restore the configured active level
+  pinMode(PM_ADC_CTRL_PIN, OUTPUT);
+  digitalWrite(PM_ADC_CTRL_PIN, PM_ADC_CTRL_ACTIVE);
+
+  float scale = (_calScale > 0) ? _calScale : PM_SCALE;
+
+  char buf[240];
+  snprintf(buf, sizeof(buf),
+    "GPIO37=LOW   raw=%4u -> %.2fV\n"
+    "GPIO37=HIGH  raw=%4u -> %.2fV\n"
+    "GPIO37=FLOAT raw=%4u -> %.2fV\n"
+    "Pick the line matching your real battery voltage,\n"
+    "then set PM_ADC_CTRL_ACTIVE in PowerMonitor.h to match.",
+    rawLow,   rawLow   * scale,
+    rawHigh,  rawHigh  * scale,
+    rawFloat, rawFloat * scale);
+  Serial.println(buf);
+  return String(buf);
+}
+
 // ─── calibrate() ─────────────────────────────────────────────────────────────
 void PowerMonitor::calibrate(float realVoltage) {
   digitalWrite(PM_ADC_CTRL_PIN, LOW); delay(10);
@@ -231,6 +276,8 @@ String PowerMonitor::statusString() const {
 
 // ─── healthString() ──────────────────────────────────────────────────────────
 String PowerMonitor::healthString() const {
+  // No plausible reading yet → do not claim a health grade
+  if (_voltage < 2.0f) return String("Health:UNKNOWN | no valid ADC reading");
   const char *h =
     (_minVoltSeen >= 3.60f) ? "GOOD"     :
     (_minVoltSeen >= 3.40f) ? "FAIR"     :
