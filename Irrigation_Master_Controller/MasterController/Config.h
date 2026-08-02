@@ -201,15 +201,15 @@
 #define PUMP_PIN         47    // legacy alias — same as IPC_PIN
 #define PUMP_ACTIVE_HIGH true
 #define IPC_PIN          47    // G1 → J2-13 GPIO47
-#define IPC_ACTIVE_HIGH  true
+#define IPC_ACTIVE_HIGH  false   // Most relay modules: LOW=ON (active low)
 #define IPC2_PIN         48    // G2 → J2-14 GPIO48
-#define IPC2_ACTIVE_HIGH true
+#define IPC2_ACTIVE_HIGH false
 
 // ── Water Source Pump Controller (WSPC) — J3 side ─────────────────────────
 #define WSP_PIN          7     // W1 relay    → J3-18 GPIO7
-#define WSP_ACTIVE_HIGH  true
+#define WSP_ACTIVE_HIGH  false   // Set true only if your relay turns ON with HIGH
 #define WSP2_PIN         3     // W2 relay    → J3-14 GPIO3
-#define WSP2_ACTIVE_HIGH true
+#define WSP2_ACTIVE_HIGH false
 
 // ── Tank level sensors — J3 side (adjacent to relay pins) ─────────────────
 // Set to 0 to disable (pump runs in MANUAL/SCHEDULE without sensors).
