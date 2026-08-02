@@ -56,8 +56,8 @@ void PowerMonitor::begin() {
   _history[0]  = v;
   _histIdx     = 1;
   _percent     = voltToPercent(v);
-  updateState();
-  updateMains();
+  updateMains();   // decide mains first
+  updateState();   // then derive source/charge state from it
   _firstRead   = false;
 
   // Diagnostic — raw value for calibration verification
@@ -116,18 +116,30 @@ float PowerMonitor::trendV() const {
 }
 
 // ─── updateState() ───────────────────────────────────────────────────────────
+// Derives source and charge state from the mains determination made by
+// updateMains(), which must run first. Keeping one decision point stops the
+// two from contradicting each other — previously this ran its own trend test
+// and could report "Battery | DISCHARGING" while mains was reported ON.
 void PowerMonitor::updateState() {
-  float v = _voltage, trend = trendV();
-  if      (v > PM_VOLT_CHARGING)                      _source = PowerSource::USB_CHARGING;
-  else if (v >= PM_VOLT_FULL && trend <= 0.002f)      _source = PowerSource::USB_FULL;
-  else if (trend > 0.008f)                            _source = PowerSource::USB_CHARGING;
-  else                                                 _source = PowerSource::BATTERY;
+  float v = _voltage;
 
-  if      (_source == PowerSource::USB_FULL)           _chargeState = ChargeState::FULL;
-  else if (_source == PowerSource::USB_CHARGING)       _chargeState = ChargeState::CHARGING;
-  else if (v <= PM_VOLT_CRITICAL)                      _chargeState = ChargeState::BATT_CRITICAL;
-  else if (v <= PM_VOLT_LOW)                           _chargeState = ChargeState::BATT_LOW;
-  else                                                 _chargeState = ChargeState::DISCHARGING;
+  if (!_mainsKnownOnce) {
+    _source      = PowerSource::UNKNOWN;
+    _chargeState = ChargeState::UNKNOWN;
+    return;
+  }
+
+  if (_mainsOn) {
+    // Charger present: full once the cell reaches the CV plateau
+    bool full   = (v >= PM_VOLT_FULL);
+    _source      = full ? PowerSource::USB_FULL : PowerSource::USB_CHARGING;
+    _chargeState = full ? ChargeState::FULL     : ChargeState::CHARGING;
+  } else {
+    _source = PowerSource::BATTERY;
+    if      (v <= PM_VOLT_CRITICAL) _chargeState = ChargeState::BATT_CRITICAL;
+    else if (v <= PM_VOLT_LOW)      _chargeState = ChargeState::BATT_LOW;
+    else                            _chargeState = ChargeState::DISCHARGING;
+  }
 }
 
 
@@ -202,8 +214,8 @@ void PowerMonitor::process() {
   _histIdx %= HISTORY_SIZE;
 
   updateHealth(v);
-  updateState();
-  updateMains();
+  updateMains();   // decide mains first
+  updateState();   // then derive source/charge state from it
 
   Serial.printf("[PowerMon] %.3fV %d%% | %s | trend:%+.4f\n",
     _voltage, _percent, isOnUSB() ? "USB" : "Battery", trendV());
