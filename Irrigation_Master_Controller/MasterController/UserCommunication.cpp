@@ -263,7 +263,7 @@ CommandResult UserCommunication::handlePowerCommand(const String &raw) {
     }
     // Remaining: N1,N2,N7 or N1 etc
     // Extract numeric ids from N-prefixed tokens
-    String tmp = args; tmp.replace("N","").replace(" ","");
+    String tmp = args; tmp.replace("N",""); tmp.replace(" ","");
     // tmp is now "1,2,7" or "1" or ""
     nodeList = tmp;
     if (nodeList.length() == 0 && !wantMaster) wantMaster = true;
