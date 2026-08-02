@@ -5,8 +5,8 @@
 // ── What the hardware provides ─────────────────────────────────────────────
 //   GPIO1  (ADC1_CH0) — VBAT voltage via 100kΩ + 390kΩ divider to GND
 //                       VBAT_actual = ADC_V * (100+390)/100 = ADC_V * 4.9
-//   GPIO37 (ADC_Ctrl) — HIGH enables VBAT read circuit (p-channel MOSFET)
-//                       HIGH = MOSFET gate low enough to turn ON
+//   GPIO37 (ADC_Ctrl) — LOW enables VBAT read circuit, HIGH disables
+//                       Enable only during read, disable after (save power)
 //   USB VBUS          — Not on any ESP32 GPIO. Inferred from voltage:
 //                         voltage > 4.25V or sustained rise → USB present
 //   CHRG pin (TP4054) — Connected to orange LED only, NOT to any GPIO
@@ -38,17 +38,16 @@
 #define PM_VBAT_PIN        1    // GPIO1  — ADC1_CH0 — battery voltage divider
 #define PM_ADC_CTRL_PIN    37   // GPIO37 — HIGH = enable ADC circuit
 
-// ── ADC voltage divider ────────────────────────────────────────────────────
-// R_top = 390kΩ (between VBAT and ADC pin)
-// R_bot = 100kΩ (between ADC pin and GND)
-// VBAT_actual = ADC_V × (390+100)/100 = ADC_V × 4.9
-// Uses esp_adc_cal for accurate millivolt conversion (±1% vs ±10% raw)
+// ── ADC setup ───────────────────────────────────────────────────────────────
+// R_top=390kΩ, R_bot=100kΩ → VBAT = ADC_V × 4.9
+// analogSetPinAttenuation(GPIO1, ADC_11db) — per-pin only, 0-3.9V range
+// Required: 4.2V battery → ADC pin = 0.857V, exceeds 0dB range (0.95V max)
 #define PM_DIVIDER_RATIO   4.9f
 
-// ── ADC_Ctrl polarity (GPIO37) ───────────────────────────────────────────
-// AO7801 p-channel MOSFET: HIGH gate signal → device ON → divider live
-// Set HIGH before reading, can be left HIGH continuously
-#define PM_ADC_CTRL_ACTIVE HIGH
+// ── ADC_Ctrl (GPIO37) ───────────────────────────────────────────────────
+// LOW  = MOSFET ON  = divider connected = valid VBAT reading
+// HIGH = MOSFET OFF = divider disconnected (power saving between reads)
+#define PM_ADC_CTRL_ACTIVE LOW
 
 // ── Battery thresholds (LiPo 3.7V nominal) ─────────────────────────────
 #define PM_VOLT_FULL       4.20f  // 100% — also USB_FULL threshold
