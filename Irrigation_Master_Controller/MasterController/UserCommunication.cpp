@@ -132,11 +132,9 @@ CommandResult UserCommunication::dispatchCommand(const String &raw,
    || cmd == "T1"        || cmd == "T2")
     return handlePumpCommand(raw);
 
-  // ── Power / battery status ────────────────────────────────────────────
-  if (cmd == "POWER STATUS" || cmd == "POWER"
-   || cmd == "BAT STATUS"   || cmd == "BAT"
-   || cmd == "BATTERY STATUS" || cmd == "BATTERY")
-    return handlePumpCommand(raw);
+  // ── POWER family ───────────────────────────────────────────────────────
+  if (cmd == "POWER" || cmd.startsWith("POWER "))
+    return handlePowerCommand(raw);
 
   // ── Well pump commands: W1|W2 ON|OFF|AUTO|STATUS ─────────────────────
   if (cmd.startsWith("W1 ") || cmd.startsWith("W2 ")
@@ -232,6 +230,71 @@ CommandResult UserCommunication::handleStartCommand(const String &schedId) {
 
 CommandResult UserCommunication::handleCheckCommand() {
   return CommandResult(isSystemHealthy(), "CHECK", getHealthStatus());
+}
+
+// ─── handlePowerCommand() ─────────────────────────────────────────────────────
+// POWER              — master power + live nodes list
+// POWER M            — master power only
+// POWER N1           — node 1 power
+// POWER N1,N2        — node 1 and node 2 power
+// POWER M N1,N2      — master + node 1 and node 2
+CommandResult UserCommunication::handlePowerCommand(const String &raw) {
+  String up = raw; up.trim(); up.toUpperCase();
+  // Strip "POWER" prefix, trim rest
+  String args = (up.length() > 6) ? up.substring(6) : "";
+  args.trim();
+
+  bool wantMaster = false;
+  String nodeList = "";  // comma-sep nodeIds e.g. "1,2,7"
+
+  if (args.length() == 0) {
+    // Plain POWER — show master + live nodes list
+    wantMaster = true;
+    // nodeList stays empty — just show live list, no per-node detail
+  } else {
+    // Parse tokens: M = master, N1/N2/etc = node ids
+    // e.g. "M N1,N2"  or "N1,N3"  or "M"
+    // First check for M token
+    if (args == "M" || args.startsWith("M ") || args.startsWith("M,")) {
+      wantMaster = true;
+      args = args.substring(1); args.trim();
+      if (args.startsWith(",")) args = args.substring(1);
+      args.trim();
+    }
+    // Remaining: N1,N2,N7 or N1 etc
+    // Extract numeric ids from N-prefixed tokens
+    String tmp = args; tmp.replace("N","").replace(" ","");
+    // tmp is now "1,2,7" or "1" or ""
+    nodeList = tmp;
+    if (nodeList.length() == 0 && !wantMaster) wantMaster = true;
+  }
+
+  String result;
+
+  // ── Master power section ────────────────────────────────────────────────
+  if (wantMaster) {
+    result += "Master:\n";
+    if (powerStatusCallback) {
+      result += powerStatusCallback();
+    } else {
+      result += "Power:unavailable\n";
+    }
+    // Always show live nodes list with plain POWER
+    if (nodeList.length() == 0 && nodeStatusCallback) {
+      result += nodeStatusCallback();
+    }
+  }
+
+  // ── Per-node power section ─────────────────────────────────────────────
+  if (nodeList.length() > 0) {
+    if (nodePowerCallback) {
+      result += nodePowerCallback(nodeList);
+    } else {
+      result += "Node power:unavailable\n";
+    }
+  }
+
+  return CommandResult(true, "POWER", result);
 }
 
 CommandResult UserCommunication::handleNodesCommand() {

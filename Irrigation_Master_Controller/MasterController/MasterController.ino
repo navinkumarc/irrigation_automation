@@ -345,12 +345,6 @@ void setup() {
       if (up=="T1 STATUS") return CommandResult(true,"T1",tank1.statusString());
       if (up=="T2 STATUS") return CommandResult(true,"T2",tank2.statusString());
       // Power / battery status
-      if (up=="POWER STATUS"||up=="POWER"
-       ||up=="BAT STATUS"  ||up=="BAT"
-       ||up=="BATTERY STATUS"||up=="BATTERY") {
-        return CommandResult(true,"POWER",
-          powerMon.statusString() + "\n" + powerMon.healthString());
-      }
       // G1/G2 — irrigation pump commands
       if (up=="G1 ON")    { ipcCtrl.setMode(PumpMode::MANUAL);  ipcCtrl.start("cmd");  return CommandResult(true,"G1",ipcCtrl.statusString()); }
       if (up=="G1 OFF")   { ipcCtrl.stop("cmd");                               return CommandResult(true,"G1",ipcCtrl.statusString()); }
@@ -430,8 +424,40 @@ void setup() {
   powerMon.begin();
   powerMon.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
   powerMon.setPollInterval(60000);
-  displayMgr.setPowerMonitor(&powerMon);  // wire battery icon into display
-  // powerMon.setPollInterval already set to 60000ms above
+  displayMgr.setPowerMonitor(&powerMon);
+
+  // ── POWER command callbacks ─────────────────────────────────────────────
+  commMgr.getUserComm()->setPowerStatusCallback([]() -> String {
+    return powerMon.statusString() + "\n" + powerMon.healthString() + "\n";
+  });
+  commMgr.getUserComm()->setNodeStatusCallback([]() -> String {
+    auto *nc = commMgr.getNodeComm();
+    return nc ? "Nodes:" + nc->getLiveNodeList() + "\n" : "Nodes:unavailable\n";
+  });
+  commMgr.getUserComm()->setNodePowerCallback([](const String &nodeIds) -> String {
+    auto *nc = commMgr.getNodeComm();
+    if (!nc) return "Nodes:unavailable\n";
+    String result;
+    int pos = 0;
+    while (pos < (int)nodeIds.length()) {
+      int comma = nodeIds.indexOf(',', pos);
+      String tok = (comma<0) ? nodeIds.substring(pos) : nodeIds.substring(pos,comma);
+      tok.trim();
+      int nid = tok.toInt();
+      if (nid > 0) {
+        const NodePowerInfo *p = nc->getNodePower(nid);
+        if (p) {
+          unsigned long ageSec = (millis() - p->lastSeenMs) / 1000;
+          char buf[80];
+          snprintf(buf,sizeof(buf),"N%d: %d%% %.2fV solar:%.2fV ago:%lus\n",
+            nid, p->batteryPercent, p->batteryVoltage, p->solarVoltage, ageSec);
+          result += String(buf);
+        } else { result += "N" + String(nid) + ":not seen\n"; }
+      }
+      if (comma<0) break; pos = comma+1;
+    }
+    return result.length() ? result : "No node data\n";
+  });
 
   irrigSeq.init(commMgr.getNodeComm(), &ipcCtrl, commMgr.getUserComm());
   irrigSeq.setMinOpenValves(IPC_MIN_OPEN_VALVES);

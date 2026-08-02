@@ -113,6 +113,14 @@ NodeMessage NodeCommunication::parseMessage(const String &raw,
 
   if (raw.startsWith(MSG_STAT_PREFIX MSG_SEP)) {
     nm.type = NodeMessageType::TELEMETRY;
+    // Update live node registry
+    if (nm.nodeId >= 1 && nm.nodeId <= 15) {
+      _registry[nm.nodeId].nodeId         = nm.nodeId;
+      _registry[nm.nodeId].batteryPercent = nm.batteryPercent;
+      _registry[nm.nodeId].batteryVoltage = nm.batteryVoltage;
+      _registry[nm.nodeId].solarVoltage   = nm.solarVoltage;
+      _registry[nm.nodeId].lastSeenMs     = millis();
+    }
 
     String n = MsgFmt::extractField(raw, KEY_NODE_ID);
     if (n.length()) nm.nodeId = n.toInt();

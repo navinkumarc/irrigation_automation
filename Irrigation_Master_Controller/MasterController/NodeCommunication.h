@@ -64,6 +64,19 @@ struct NodeMessage {
 };
 
 // Callback fired by NodeCommunication when a parsed node message arrives
+// ── Node power/telemetry record — updated on every TELEMETRY message ─────────
+struct NodePowerInfo {
+  int           nodeId         = 0;
+  int           batteryPercent = 0;
+  float         batteryVoltage = 0.0f;
+  float         solarVoltage   = 0.0f;
+  unsigned long lastSeenMs     = 0;     // millis() of last TELEMETRY
+  bool          isLive() const {
+    // Consider live if heard within 10 minutes
+    return lastSeenMs > 0 && (millis() - lastSeenMs) < 600000UL;
+  }
+};
+
 using NodeMessageCallback = std::function<void(const NodeMessage &)>;
 
 // ─── NodeCommunication ────────────────────────────────────────────────────────
@@ -74,6 +87,7 @@ class NodeCommunication {
 
   // Callback registered by CommManager to receive parsed node events
   NodeMessageCallback messageCallback;
+  NodePowerInfo       _registry[16] = {};  // index = nodeId (1-15)
 
   bool initialized = false;
 
@@ -121,6 +135,25 @@ public:
   // ── Inbound — register callback for parsed node events ───────────────────
 
   void setMessageCallback(NodeMessageCallback cb) { messageCallback = cb; }
+
+  // ── Node registry (updated from incoming TELEMETRY) ───────────────────
+  // Returns nullptr if nodeId never heard or out of range
+  const NodePowerInfo* getNodePower(int nodeId) const {
+    if (nodeId < 1 || nodeId > 15) return nullptr;
+    return _registry[nodeId].lastSeenMs > 0 ? &_registry[nodeId] : nullptr;
+  }
+
+  // Returns comma-separated list of live node IDs e.g. "N1,N3,N7"
+  String getLiveNodeList() const {
+    String s;
+    for (int i = 1; i <= 15; i++) {
+      if (_registry[i].isLive()) {
+        if (s.length()) s += ",";
+        s += "N" + String(i);
+      }
+    }
+    return s.length() ? s : "none";
+  }
 
   // ── Background — call every loop() ───────────────────────────────────────
 
