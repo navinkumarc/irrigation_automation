@@ -169,6 +169,22 @@ void PowerMonitor::updateMains() {
   } else if (trendV() > 0.004f) {
     _mainsOn        = true;               // rising within the ambiguous band
     _mainsKnownOnce = true;
+  } else if (_mainsOn && _prevVoltage > 2.0f &&
+             (_prevVoltage - _voltage) > 0.03f) {
+    // Single-sample drop > 30mV since last read — the charger just disappeared.
+    // A charger holds or raises the voltage; a drop this sharp within one poll
+    // interval means USB was removed. This fires on the very first poll after
+    // the USB cable comes out, instead of waiting 40s for the trend to fill.
+    _mainsOn        = false;
+    _mainsKnownOnce = true;
+  } else if (trendV() < -0.004f) {
+    // Sustained falling trend — confirms USB has been off for several samples.
+    // This is the definitive signal that USB was removed, even if the
+    // absolute voltage is still in the "looks like USB" band. Without this,
+    // unplugging USB at 4.10V keeps mains=ON until the slow discharge
+    // crosses the 3.75V threshold — which can take hours.
+    _mainsOn        = false;
+    _mainsKnownOnce = true;
   } else if (!_mainsKnownOnce) {
     // Booting inside the ambiguous band with no prior state and no clear
     // trend. Returning UNKNOWN forever is useless, so make a best guess by
@@ -205,6 +221,7 @@ void PowerMonitor::process() {
 
   float v = readVoltage();
 
+  _prevVoltage = _voltage;   // save for single-sample drop detection
   _voltage = v;
   _percent = voltToPercent(v);
 

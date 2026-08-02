@@ -105,6 +105,7 @@ class PowerMonitor {
 
   // ── Measurements ────────────────────────────────────────────────────────
   float         _voltage           = 0.0f;
+  float         _prevVoltage       = 0.0f;   // previous poll reading
   int           _percent           = 0;
   PowerSource   _source            = PowerSource::UNKNOWN;
   ChargeState   _chargeState       = ChargeState::UNKNOWN;
