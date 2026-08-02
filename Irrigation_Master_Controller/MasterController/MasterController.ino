@@ -427,7 +427,8 @@ void setup() {
 
   powerMon.begin();
   powerMon.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
-  powerMon.setPollInterval(60000);  // read every 60s
+  powerMon.setPollInterval(60000);
+  displayMgr.setPowerMonitor(&powerMon);  // wire battery icon into display  // read every 60s
 
   irrigSeq.init(commMgr.getNodeComm(), &ipcCtrl, commMgr.getUserComm());
   irrigSeq.setMinOpenValves(IPC_MIN_OPEN_VALVES);
