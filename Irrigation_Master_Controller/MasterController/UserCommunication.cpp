@@ -109,25 +109,63 @@ CommandResult UserCommunication::dispatchCommand(const String &raw,
   if (cmd == "STATS")            return handleStatsCommand();
   if (cmd.startsWith("START "))  return handleStartCommand(raw.substring(6));
   if (cmd.startsWith("NODE "))   return handleNodeCommand(raw.substring(5));
-  // Irrigation schedule commands
+
+  // ── Irrigation schedule commands ─────────────────────────────────────
   if (cmd.startsWith("ADD SCHED") || cmd.startsWith("DEL SCHED")
-   || cmd.startsWith("ISCH ")   || cmd.startsWith("ISDL "))
+   || cmd.startsWith("ISCH ")     || cmd.startsWith("ISDL "))
     return handleScheduleCommand(raw);
-  // Short irrigation schedule: G1 I:... (starts with G1 or G2)
+  // G1/G2 I:... = irrigation schedule shorthand
   if ((cmd.startsWith("G1 ") || cmd.startsWith("G2 ")) && cmd.indexOf("I:") >= 0)
     return handleScheduleCommand(raw);
+
+  // ── Fill group commands: FG1/FG2 ON|OFF|AUTO|STATUS ──────────────────
+  if (cmd.startsWith("FG1 ") || cmd.startsWith("FG2 ")
+   || cmd == "FG1" || cmd == "FG2")
+    return handlePumpCommand(raw);
+
+  // ── Tank status: T1|T2 STATUS ─────────────────────────────────────────
+  if (cmd == "T1 STATUS" || cmd == "T2 STATUS"
+   || cmd == "T1"        || cmd == "T2")
+    return handlePumpCommand(raw);
+
+  // ── Power / battery status ────────────────────────────────────────────
+  if (cmd == "POWER STATUS" || cmd == "POWER"
+   || cmd == "BAT STATUS"   || cmd == "BAT"
+   || cmd == "BATTERY STATUS" || cmd == "BATTERY")
+    return handlePumpCommand(raw);
+
+  // ── Well pump commands: W1|W2 ON|OFF|AUTO|STATUS ─────────────────────
+  if (cmd.startsWith("W1 ") || cmd.startsWith("W2 ")
+   || cmd == "W1" || cmd == "W2")
+    return handlePumpCommand(raw);
+
+  // ── Irrigation pump commands: G1|G2 ON|OFF|STATUS ────────────────────
+  if (cmd.startsWith("G1 ") || cmd.startsWith("G2 ")
+   || cmd == "G1" || cmd == "G2")
+    return handlePumpCommand(raw);
+
+  // ── Pump schedule commands: WSCH ... ──────────────────────────────────
+  if (cmd.startsWith("WSCH ") || cmd == "WSCH LIST" || cmd == "WSCH STATUS"
+   || cmd.startsWith("DEL W") || cmd.startsWith("DEL G")
+   || cmd.startsWith("DIS W") || cmd.startsWith("DIS G")
+   || cmd.startsWith("ENA W") || cmd.startsWith("ENA G")
+   || cmd.startsWith("PSCHED "))
+    return handlePumpCommand(raw);
+
+  // ── Combined pump status ──────────────────────────────────────────────
+  if (cmd == "PUMP STATUS" || cmd == "PUMP"
+   || cmd.startsWith("WSP ") || cmd.startsWith("IPC "))
+    return handlePumpCommand(raw);
+
   if (cmd == "RESTART" || cmd == "REBOOT") {
     sendAlert(MsgFmt::alertWarning("Controller restarting now..."), SEV_WARNING);
     delay(500); ESP.restart();
     return CommandResult(true, "RESTART", "Restarting...");
   }
-  // Pump commands forwarded via callback
-  if (cmd.startsWith("WSP ") || cmd.startsWith("IPC "))
-    return handlePumpCommand(raw);
-  if (cmd == "PUMP STATUS")
-    return handlePumpCommand(raw);
 
-  return CommandResult(false, "UNKNOWN", "Unknown command. Send HELP for list.");
+  return CommandResult(false, "UNKNOWN",
+    "Unknown: " + raw.substring(0, min((int)raw.length(), 20))
+    + ". Send HELP");
 }
 
 // ─── Command handlers ─────────────────────────────────────────────────────────
@@ -318,22 +356,44 @@ String UserCommunication::getHealthStatus() const {
 // ─── Help text ────────────────────────────────────────────────────────────────
 String UserCommunication::getHelpText() const {
   return
-    "Commands:\n"
-    "  STATUS           — channel & schedule status\n"
-    "  SCHEDULES        — list schedules\n"
-    "  ISCH G1 I:id,T:HH:MM,R:D|W|O[,D:mask][,Q:steps]\n"
-    "  ISDL <id>       — delete irrigation schedule\n"
-    "  START <id>       — run now\n"
-    "  STOP             — stop all\n"
-    "  NODE <id> <cmd>  — send command to node\n"
-    "  STATS            — memory & uptime\n"
-    "  DIAGNOSTICS      — full system diagnostic (serial)\n"
-    "  CHECK            — health check\n"
-    "  RESTART          — reboot the controller\n"
-    "  W1|W2|W3 ON|OFF|AUTO|STATUS — well pump\n"
-    "  G1|G2 ON|OFF|STATUS         — irrigation pump\n"
-    "  PUMP STATUS                 — all pump status\n"
-    "  WSCH W1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
-    "  DEL/DIS/ENA W1:id | WSCH LIST|STATUS\n"
-    "  HELP             — this list\n";
+    // ── System ───────────────────────────────────────────────────────
+    "STATUS           system & channel status\n"
+    "STATS            heap & uptime\n"
+    "CHECK            health check\n"
+    "DIAGNOSTICS      full diag (serial only)\n"
+    "RESTART          reboot controller\n"
+    // ── Power / Battery ──────────────────────────────────────────────
+    "POWER STATUS     voltage % source charge-state health\n"
+    "BAT              alias for POWER STATUS\n"
+    // ── Fill groups (WTT) ─────────────────────────────────────────────
+    "FG1 ON|OFF|AUTO  fill group 1 control\n"
+    "FG2 ON|OFF|AUTO  fill group 2 control\n"
+    "FG1 STATUS       FG1:RUNNING(AUTO) T1:FILLING 45s\n"
+    "T1 STATUS        tank 1 level (EMPTY/FILLING/FULL)\n"
+    "T2 STATUS        tank 2 level\n"
+    // ── Irrigation groups ─────────────────────────────────────────────
+    "G1 ON|OFF        irrigation pump 1 manual\n"
+    "G2 ON|OFF        irrigation pump 2 manual\n"
+    "G1 STATUS        pump state + open valves\n"
+    "PUMP STATUS      all pumps + tanks\n"
+    // ── Irrigation schedule ───────────────────────────────────────────
+    "SCHEDULES        list all irrigation schedules\n"
+    "ISCH <grp> I:<id>,T:HH:MM,R:D|W|O[,D:mask],Q:n.v.m-...\n"
+    "ISDL <id>        delete irrigation schedule\n"
+    "START <id>       run schedule now\n"
+    "STOP             stop running sequence\n"
+    // ── Pump schedule (WTT / IPC) ─────────────────────────────────────
+    "WSCH FG1 I:<id>,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
+    "WSCH LIST        list pump schedules\n"
+    "WSCH STATUS      next run times\n"
+    "DEL FG1:<id>     delete pump schedule\n"
+    "DIS/ENA FG1:<id> disable/enable pump schedule\n"
+    // ── Node ─────────────────────────────────────────────────────────
+    "NODE <id> <cmd>  send command to node\n"
+    // ── Setup (Serial only) ───────────────────────────────────────────
+    "SETUP WTT ID:FG1,W:W1,T:T1  create fill group\n"
+    "SETUP IRR ID:IG1,G:G1,M:1   create irrigation group\n"
+    "SETUP NODE IG1,N:1,V:2,3    add node to group\n"
+    "SETUP SHOW / SETUP DEL <id>\n"
+    "HELP             this list\n";
 }
