@@ -39,19 +39,24 @@
 #define PM_ADC_CTRL_PIN    37   // GPIO37 — HIGH = enable ADC circuit
 
 // ── ADC voltage divider ────────────────────────────────────────────────────
-// R_top = 390kΩ, R_bot = 100kΩ, Vref = 3.3V, ADC 12-bit (0-4095)
-// VBAT = ADC_raw / 4095.0 * 3.3 * (390+100)/100
-#define PM_ADC_REF_V       3.3f
-#define PM_ADC_RESOLUTION  4095.0f
-#define PM_DIVIDER_RATIO   4.9f   // (390+100)/100
+// R_top = 390kΩ (between VBAT and ADC pin)
+// R_bot = 100kΩ (between ADC pin and GND)
+// VBAT_actual = ADC_V × (390+100)/100 = ADC_V × 4.9
+// Uses esp_adc_cal for accurate millivolt conversion (±1% vs ±10% raw)
+#define PM_DIVIDER_RATIO   4.9f
 
-// ── Battery thresholds (LiPo 3.7V) ────────────────────────────────────────
-#define PM_VOLT_FULL       4.20f
-#define PM_VOLT_CHARGING   4.25f  // above this → USB + charging
-#define PM_VOLT_GOOD       3.80f
-#define PM_VOLT_LOW        3.50f
-#define PM_VOLT_CRITICAL   3.30f
-#define PM_VOLT_EMPTY      3.20f
+// ── ADC_Ctrl polarity (GPIO37) ───────────────────────────────────────────
+// AO7801 MOSFET gate: LOW = ON (connects divider) / HIGH = OFF (floats)
+// Active LOW — previous code had this wrong (was HIGH)
+#define PM_ADC_CTRL_ACTIVE LOW
+
+// ── Battery thresholds (LiPo 3.7V nominal) ─────────────────────────────
+#define PM_VOLT_FULL       4.20f  // 100% — also USB_FULL threshold
+#define PM_VOLT_CHARGING   4.25f  // above this = USB charging (above cell max)
+#define PM_VOLT_GOOD       3.80f  // comfortable operating range
+#define PM_VOLT_LOW        3.50f  // send low-battery warning
+#define PM_VOLT_CRITICAL   3.30f  // send critical alert
+#define PM_VOLT_EMPTY      3.20f  // 0%
 
 // ── Power source ───────────────────────────────────────────────────────────
 enum class PowerSource {
