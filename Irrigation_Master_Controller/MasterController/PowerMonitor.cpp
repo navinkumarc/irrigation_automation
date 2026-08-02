@@ -98,9 +98,9 @@ void PowerMonitor::updateState() {
   } else if (_source == PowerSource::USB_CHARGING) {
     _chargeState = ChargeState::CHARGING;
   } else if (v <= PM_VOLT_CRITICAL) {
-    _chargeState = ChargeState::CRITICAL;
+    _chargeState = ChargeState::BATT_CRITICAL;
   } else if (v <= PM_VOLT_LOW) {
-    _chargeState = ChargeState::LOW;
+    _chargeState = ChargeState::BATT_LOW;
   } else {
     _chargeState = ChargeState::DISCHARGING;
   }
@@ -155,24 +155,24 @@ void PowerMonitor::process() {
     chargeState() == ChargeState::CHARGING  ? "CHARGING"    :
     chargeState() == ChargeState::FULL       ? "FULL"        :
     chargeState() == ChargeState::DISCHARGING? "DISCHARGING" :
-    chargeState() == ChargeState::LOW        ? "LOW"         :
-    chargeState() == ChargeState::CRITICAL   ? "CRITICAL"    : "UNKNOWN",
+    chargeState() == ChargeState::BATT_LOW        ? "LOW"         :
+    chargeState() == ChargeState::BATT_CRITICAL   ? "CRITICAL"    : "UNKNOWN",
     trendV());
 
   // ── User alerts for state changes ────────────────────────────────────────
-  if (_chargeState == ChargeState::LOW && !_lowAlertSent) {
+  if (_chargeState == ChargeState::BATT_LOW && !_lowAlertSent) {
     _lowAlertSent = true;
     sendAlert("[WARNING] Battery low: " + String(_percent) + "% ("
               + String(_voltage, 2) + "V) — connect USB power", SEV_WARNING);
   }
-  if (_chargeState != ChargeState::LOW) _lowAlertSent = false;
+  if (_chargeState != ChargeState::BATT_LOW) _lowAlertSent = false;
 
-  if (_chargeState == ChargeState::CRITICAL && !_criticalAlertSent) {
+  if (_chargeState == ChargeState::BATT_CRITICAL && !_criticalAlertSent) {
     _criticalAlertSent = true;
     sendAlert("[ERROR] Battery CRITICAL: " + String(_percent) + "% ("
               + String(_voltage, 2) + "V) — device may shut down soon", SEV_ERROR);
   }
-  if (_chargeState != ChargeState::CRITICAL) _criticalAlertSent = false;
+  if (_chargeState != ChargeState::BATT_CRITICAL) _criticalAlertSent = false;
 
   _firstRead = false;
 }
@@ -188,8 +188,8 @@ String PowerMonitor::statusString() const {
     (_chargeState == ChargeState::CHARGING)   ? "CHARGING"    :
     (_chargeState == ChargeState::FULL)        ? "FULL"        :
     (_chargeState == ChargeState::DISCHARGING) ? "DISCHARGING" :
-    (_chargeState == ChargeState::LOW)         ? "LOW"         :
-    (_chargeState == ChargeState::CRITICAL)    ? "CRITICAL"    : "UNKNOWN";
+    (_chargeState == ChargeState::BATT_LOW)         ? "LOW"         :
+    (_chargeState == ChargeState::BATT_CRITICAL)    ? "CRITICAL"    : "UNKNOWN";
 
   char buf[80];
   snprintf(buf, sizeof(buf), "%.2fV %d%% | %s | %s",

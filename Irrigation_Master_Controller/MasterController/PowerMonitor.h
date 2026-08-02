@@ -67,8 +67,8 @@ enum class ChargeState {
   CHARGING,       // Voltage actively rising (USB connected)
   FULL,           // Voltage at or above VOLT_FULL (USB connected)
   DISCHARGING,    // Voltage falling or stable below VOLT_FULL
-  LOW,            // Below PM_VOLT_LOW — alert sent
-  CRITICAL        // Below PM_VOLT_CRITICAL — action required
+  BATT_LOW,            // Below PM_VOLT_LOW — alert sent
+  BATT_CRITICAL        // Below PM_VOLT_CRITICAL — action required
 };
 
 // ── PowerMonitor ───────────────────────────────────────────────────────────
