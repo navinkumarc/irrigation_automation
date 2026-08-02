@@ -46,10 +46,19 @@
 // VADC range: 0.653V (3.2V bat) to 0.857V (4.2V bat) — within 0dB range
 #define PM_DIVIDER_RATIO   4.9f
 
-// ── GPIO37 polarity — pull-up means HIGH by default = circuit disabled ────
-// Drive LOW to enable VBAT read, HIGH to disable (saves power between reads)
-// NO analogSetPinAttenuation — 0dB is correct, attenuation breaks scale
-#define PM_ADC_CTRL_ACTIVE LOW
+// ── GPIO37 polarity — VERIFIED ON HARDWARE via POWER RAW ─────────────────
+//   GPIO37=HIGH  raw=848  <-- only state that reads the divider
+//   GPIO37=LOW   raw=0
+//   GPIO37=FLOAT raw=0
+// HIGH enables the VBAT read circuit on this board.
+#define PM_ADC_CTRL_ACTIVE HIGH
+
+// ── ADC attenuation — set explicitly, do not rely on the core default ────
+// The Arduino ESP32 core defaults analogRead() to 11dB. We set it per-pin
+// so the scale factor below is always correct regardless of core version.
+// 11dB on ESP32-S3 → full scale ≈ 3.9V.
+// Sanity check with raw=848: 848/4095 x 3.9 x 4.9 = 3.96V (battery on USB).
+#define PM_ADC_FULLSCALE   3.9f
 
 // ── Battery thresholds (LiPo 3.7V nominal) ─────────────────────────────
 #define PM_VOLT_FULL       4.20f  // 100% — also USB_FULL threshold

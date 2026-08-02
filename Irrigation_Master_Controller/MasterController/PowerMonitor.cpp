@@ -26,20 +26,21 @@
 
 #include "PowerMonitor.h"
 
-// Vref at 0dB, 12-bit. Tune with POWER CAL if readings differ from multimeter.
-// Typical ESP32-S3: 1.1V. Some boards: 0.95V–1.1V.
-#define PM_VREF_0DB   1.1f
-#define PM_SCALE      (PM_VREF_0DB * PM_DIVIDER_RATIO / 4095.0f)
+// VBAT = raw x (PM_ADC_FULLSCALE / 4095) x PM_DIVIDER_RATIO
+// PM_ADC_FULLSCALE is defined in PowerMonitor.h (3.9V for 11dB).
+// Tune with POWER CAL <multimeter_reading> if it differs from reality.
+#define PM_SCALE      (PM_ADC_FULLSCALE * PM_DIVIDER_RATIO / 4095.0f)
 
 // ─── begin() ─────────────────────────────────────────────────────────────────
 void PowerMonitor::begin() {
-  // GPIO37: pull-up default (HIGH = disabled). Drive LOW to enable.
+  // GPIO37: HIGH enables the VBAT read circuit (verified on hardware).
   pinMode(PM_ADC_CTRL_PIN, OUTPUT);
-  digitalWrite(PM_ADC_CTRL_PIN, LOW);   // enable read circuit
-  delay(20);                             // let divider settle
+  digitalWrite(PM_ADC_CTRL_PIN, PM_ADC_CTRL_ACTIVE);
 
-  // GPIO1: ADC1_CH0. No pinMode or attenuation change needed.
-  // Default 0dB attenuation is correct for VBAT divider output range.
+  // GPIO1: set 11dB explicitly on this pin only, so the scale factor
+  // holds regardless of what the core default happens to be.
+  analogSetPinAttenuation(PM_VBAT_PIN, ADC_11db);
+  delay(20);   // let divider settle
 
   // First reading — always store it, even if implausible, so the
   // reported value reflects what the ADC actually measured.
@@ -53,18 +54,12 @@ void PowerMonitor::begin() {
   updateState();
   _firstRead   = false;
 
-  // Disable after reading
-  digitalWrite(PM_ADC_CTRL_PIN, HIGH);
-
-  // Diagnostic — shows raw value for calibration verification
+  // Diagnostic — raw value for calibration verification
   uint32_t rawSum = 0;
-  digitalWrite(PM_ADC_CTRL_PIN, LOW);
-  delay(5);
   for (int i = 0; i < 8; i++) { rawSum += analogRead(PM_VBAT_PIN); delayMicroseconds(200); }
-  digitalWrite(PM_ADC_CTRL_PIN, HIGH);
   uint32_t rawAvg = rawSum / 8;
-  float    adcV   = rawAvg / 4095.0f * PM_VREF_0DB;
-  Serial.printf("[PowerMon] Init: GPIO37=LOW raw=%u adcV=%.3fV vbat=%.3fV %d%% | %s\n",
+  float    adcV   = rawAvg / 4095.0f * PM_ADC_FULLSCALE;
+  Serial.printf("[PowerMon] Init: GPIO37=HIGH raw=%u adcV=%.3fV vbat=%.3fV %d%% | %s\n",
     rawAvg, adcV, _voltage, _percent, statusString().c_str());
 }
 
@@ -72,7 +67,7 @@ void PowerMonitor::begin() {
 float PowerMonitor::readVoltage() {
   float scale = (_calScale > 0) ? _calScale : PM_SCALE;
 
-  digitalWrite(PM_ADC_CTRL_PIN, LOW);
+  digitalWrite(PM_ADC_CTRL_PIN, PM_ADC_CTRL_ACTIVE);
   delayMicroseconds(500);
 
   uint32_t sum = 0;
@@ -80,8 +75,6 @@ float PowerMonitor::readVoltage() {
     sum += analogRead(PM_VBAT_PIN);
     delayMicroseconds(200);
   }
-
-  digitalWrite(PM_ADC_CTRL_PIN, HIGH);  // disable after read
   return (float)sum / SAMPLE_COUNT * scale;
 }
 
@@ -244,16 +237,15 @@ String PowerMonitor::diagnose() {
 
 // ─── calibrate() ─────────────────────────────────────────────────────────────
 void PowerMonitor::calibrate(float realVoltage) {
-  digitalWrite(PM_ADC_CTRL_PIN, LOW); delay(10);
+  digitalWrite(PM_ADC_CTRL_PIN, PM_ADC_CTRL_ACTIVE); delay(10);
   float rawAvg = 0;
   for (int i = 0; i < 32; i++) { rawAvg += analogRead(PM_VBAT_PIN); delayMicroseconds(200); }
   rawAvg /= 32;
-  digitalWrite(PM_ADC_CTRL_PIN, HIGH);
   _calScale = realVoltage / rawAvg;
-  float newVref = _calScale * 4095.0f / PM_DIVIDER_RATIO;
+  float newFS = _calScale * 4095.0f / PM_DIVIDER_RATIO;
   Serial.printf("[PowerMon] CAL: raw=%.1f → realV=%.3fV scale=%.7f\n",
                 rawAvg, realVoltage, _calScale);
-  Serial.printf("[PowerMon] Set PM_VREF_0DB = %.4f in PowerMonitor.cpp\n", newVref);
+  Serial.printf("[PowerMon] Set PM_ADC_FULLSCALE = %.4f in PowerMonitor.h\n", newFS);
 }
 
 // ─── statusString() ──────────────────────────────────────────────────────────
