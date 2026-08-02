@@ -40,6 +40,11 @@ void PowerMonitor::begin() {
   // GPIO1: set 11dB explicitly on this pin only, so the scale factor
   // holds regardless of what the core default happens to be.
   analogSetPinAttenuation(PM_VBAT_PIN, ADC_11db);
+
+#if MAINS_SENSE_PIN != 0
+  // 5V-rail sense: divider already defines the level, no pull needed
+  pinMode(MAINS_SENSE_PIN, INPUT);
+#endif
   delay(20);   // let divider settle
 
   // First reading — always store it, even if implausible, so the
@@ -52,6 +57,7 @@ void PowerMonitor::begin() {
   _histIdx     = 1;
   _percent     = voltToPercent(v);
   updateState();
+  updateMains();
   _firstRead   = false;
 
   // Diagnostic — raw value for calibration verification
@@ -124,6 +130,38 @@ void PowerMonitor::updateState() {
   else                                                 _chargeState = ChargeState::DISCHARGING;
 }
 
+
+// ─── updateMains() ───────────────────────────────────────────────────────────
+// Preferred: read the 5V-rail sense pin — direct and unambiguous.
+// Fallback:  infer from resting battery voltage with hysteresis.
+//
+// Why not use the voltage trend: a LiPo in the constant-current phase rises
+// about 0.0001 V/s, and once it reaches the constant-voltage phase it stops
+// rising altogether. A threshold low enough to catch that is indistinguishable
+// from ADC noise, so trend alone cannot decide this.
+void PowerMonitor::updateMains() {
+#if MAINS_SENSE_PIN != 0
+  bool level = (digitalRead(MAINS_SENSE_PIN) == HIGH);
+  _mainsOn        = MAINS_SENSE_HIGH ? level : !level;
+  _mainsKnownOnce = true;
+  return;
+#else
+  if (_voltage < 2.0f) return;            // no usable reading yet
+
+  if (_voltage >= PM_MAINS_USB_CERTAIN) {
+    _mainsOn        = true;               // only a charger holds it this high
+    _mainsKnownOnce = true;
+  } else if (_voltage <= PM_MAINS_BATT_CERTAIN) {
+    _mainsOn        = false;              // a charger would not let it sag here
+    _mainsKnownOnce = true;
+  } else if (trendV() > 0.004f) {
+    _mainsOn        = true;               // rising within the ambiguous band
+    _mainsKnownOnce = true;
+  }
+  // else: ambiguous band, no clear trend -> keep the previous determination
+#endif
+}
+
 // ─── updateHealth() ──────────────────────────────────────────────────────────
 void PowerMonitor::updateHealth(float v) {
   if (v < 2.0f) return;   // implausible — do not pollute health stats
@@ -157,20 +195,20 @@ void PowerMonitor::process() {
 
   updateHealth(v);
   updateState();
+  updateMains();
 
   Serial.printf("[PowerMon] %.3fV %d%% | %s | trend:%+.4f\n",
     _voltage, _percent, isOnUSB() ? "USB" : "Battery", trendV());
 
   // ── Mains transition alert — pumps cannot run without mains ────────────
-  bool mainsNow = isMainsOn();
-  if (mainsKnown() && _mainsKnownOnce && mainsNow != _lastMains) {
-    if (mainsNow)
+  if (_mainsKnownOnce && _mainsOn != _lastMains) {
+    if (_mainsOn)
       sendAlert("[INFO] Mains power RESTORED — pumps available", SEV_WARNING);
     else
       sendAlert("[WARNING] Mains power LOST — pumps unavailable, on battery",
                 SEV_WARNING);
   }
-  if (mainsKnown()) { _lastMains = mainsNow; _mainsKnownOnce = true; }
+  _lastMains = _mainsOn;
 
   if (_chargeState == ChargeState::BATT_LOW && !_lowAlertSent) {
     _lowAlertSent = true;

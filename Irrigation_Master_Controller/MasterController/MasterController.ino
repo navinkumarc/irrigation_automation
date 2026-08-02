@@ -335,10 +335,18 @@ void setup() {
       // ── Mains guard — pumps run on AC mains, block start when it is off ─────
       // Mains is inferred from battery charge state (see PowerMonitor).
       // Only blocks START commands; OFF/STATUS always allowed.
+      // Only block on a HARDWARE-SENSED mains failure. The voltage-based
+      // inference is not certain enough to refuse a pump start on its own —
+      // a false OFF would strand the irrigation. Wire MAINS_SENSE_PIN to
+      // enable the block; until then we warn but proceed.
       bool isStart = (up=="FG1 ON"||up=="FG2 ON"||up=="G1 ON"||up=="G2 ON");
       if (isStart && powerMon.mainsKnown() && !powerMon.isMainsOn()) {
-        return CommandResult(false, "PUMP",
-          "Mains OFF — pump start blocked. " + powerMon.statusString());
+        if (powerMon.mainsIsSensed()) {
+          return CommandResult(false, "PUMP",
+            "Mains OFF — pump start blocked. " + powerMon.statusString());
+        }
+        Serial.println("[Pump] WARNING: mains inferred OFF, starting anyway "
+                       "(no MAINS_SENSE_PIN wired)");
       }
 
       // ── Fill group commands: FG1/FG2 (WSP pump + tank) ──────────────────────

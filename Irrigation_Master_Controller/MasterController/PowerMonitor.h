@@ -32,6 +32,7 @@
 
 #include <Arduino.h>
 #include <functional>
+#include "Config.h"
 #include "MessageFormats.h"
 
 // ── Hardware pins — confirmed from official HTIT-WB32_V3 datasheet ─────────
@@ -67,6 +68,13 @@
 #define PM_VOLT_LOW        3.50f  // send low-battery warning
 #define PM_VOLT_CRITICAL   3.30f  // send critical alert
 #define PM_VOLT_EMPTY      3.20f  // 0%
+
+// ── Mains inference thresholds (used when MAINS_SENSE_PIN == 0) ──────────
+// Above USB_CERTAIN: only a charger holds a cell this high -> USB present
+// Below BATT_CERTAIN: a charger would not let it sag this low -> on battery
+// Between the two: ambiguous, hold the previous state (hysteresis)
+#define PM_MAINS_USB_CERTAIN   4.05f
+#define PM_MAINS_BATT_CERTAIN  3.75f
 
 // ── Power source ───────────────────────────────────────────────────────────
 enum class PowerSource {
@@ -115,8 +123,9 @@ class PowerMonitor {
   unsigned long _lastPollMs        = 0;
   bool          _firstRead         = true;
   float         _calScale          = 0.0f;  // 0 = use default scale
-  bool          _lastMains         = false; // previous mains state
-  bool          _mainsKnownOnce    = false; // seen at least one valid reading
+  bool          _mainsOn           = false; // current mains state
+  bool          _lastMains         = false; // previous, for transition alerts
+  bool          _mainsKnownOnce    = false; // have a usable determination
 
   using AlertCb = std::function<void(const String&, const String&)>;
   AlertCb _alert;
@@ -126,6 +135,7 @@ class PowerMonitor {
   int     voltToPercent(float v) const;
   float   trendV() const;           // positive = rising, negative = falling
   void    updateState();
+  void    updateMains();
   void    updateHealth(float v);
   void    sendAlert(const String &msg, const String &sev = SEV_INFO);
 
@@ -164,12 +174,14 @@ public:
   //
   // Limitation: with no battery fitted, VBAT floats and the state is
   // unreliable — mainsKnown() returns false in that case.
-  bool isMainsOn()   const { return isOnUSB(); }
-  bool mainsKnown()  const { return _source != PowerSource::UNKNOWN
-                                    && _voltage > 2.0f; }
+  bool isMainsOn()   const { return _mainsOn; }
+  bool mainsKnown()  const { return _mainsKnownOnce; }
+  // True when a hardware sense pin is wired (reliable) vs inferred
+  bool mainsIsSensed() const { return MAINS_SENSE_PIN != 0; }
   const char* mainsString() const {
     if (!mainsKnown()) return "UNKNOWN";
-    return isMainsOn() ? "ON" : "OFF";
+    if (mainsIsSensed()) return isMainsOn() ? "ON" : "OFF";
+    return isMainsOn() ? "ON?" : "OFF?";   // ? = inferred, not sensed
   }
 
   // ── Status string for commands ────────────────────────────────────────────

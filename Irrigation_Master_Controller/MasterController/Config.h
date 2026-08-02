@@ -140,10 +140,29 @@
 //  GPIO39 (J3-10)   GPIO40 (J3-9)
 //
 // ── Mains power detection ────────────────────────────────────────────────
-//  No dedicated pin needed. Mains presence is inferred from battery state:
-//    Battery CHARGING or FULL-on-USB → USB adapter powered → MAINS ON
-//    Battery DISCHARGING             → no USB power        → MAINS OFF
-//  See PowerMonitor::isMainsOn()
+//
+//  RECOMMENDED — 5V rail sense (two resistors, no mains contact):
+//    J2-2 (5V) is live ONLY when USB is connected. The datasheet lists it
+//    as "5V Pin (USB Powered only)". Sensing it gives a direct, instant,
+//    unambiguous answer to "is the adapter powered?".
+//
+//      J2-2 (5V) ──[100k]──┬── GPIO26 (J2-15)
+//                          │
+//                       [150k]
+//                          │
+//                     J2-1 (GND)
+//
+//    Divider output: 5.0 x 150/250 = 3.0V — safe for a 3.3V input.
+//    USB present -> GPIO26 HIGH.  USB absent -> pulled to GND -> LOW.
+//    Set MAINS_SENSE_PIN to 26 once wired.
+//
+//  FALLBACK — battery voltage level (no wiring, less certain):
+//    Used automatically when MAINS_SENSE_PIN is 0. Infers USB from the
+//    resting voltage with hysteresis. See PowerMonitor::isMainsOn().
+//    Ambiguous in the 3.75-4.05V band, where it holds the previous state.
+//
+#define MAINS_SENSE_PIN   0     // 0 = disabled (use inference). Set to 26 when wired.
+#define MAINS_SENSE_HIGH  true  // true: HIGH = USB present
 
 // ── Pin assignments — grouped by function, sequential on same header side ──
 //
