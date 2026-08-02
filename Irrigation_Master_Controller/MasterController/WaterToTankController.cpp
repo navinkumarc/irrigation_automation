@@ -16,8 +16,14 @@ void WaterToTankController::init(WSPController *pump, TankManager *tank) {
         doStart("auto-tank-empty");
     });
     tank->setOnFullCallback([this]() {
-      if (_state == WTTState::RUNNING)
+      // Auto-stop on tank-full applies to AUTO and SCHEDULE only.
+      // MANUAL is a deliberate operator override: the pump runs until an
+      // explicit OFF or the max-run cutoff, regardless of tank level.
+      if (_state == WTTState::RUNNING && _mode != WTTMode::MANUAL)
         doStop("auto-tank-full");
+      else if (_state == WTTState::RUNNING)
+        Serial.printf("[%s] Tank FULL — MANUAL mode, pump continues "
+                      "(send %s OFF to stop)\n", _id, _id);
     });
   }
 
@@ -35,7 +41,7 @@ bool WaterToTankController::start(const String &reason) {
   }
   if (_state == WTTState::RUNNING) return true;
   if (_state == WTTState::FAULT) {
-    sendAlert("Cannot start — group in FAULT state. Send FG " + String(_id) + " CLEAR", SEV_WARNING);
+    sendAlert("Cannot start — group in FAULT state. Send " + String(_id) + " CLEAR", SEV_WARNING);
     return false;
   }
   // In AUTO mode: don't start if tank already full

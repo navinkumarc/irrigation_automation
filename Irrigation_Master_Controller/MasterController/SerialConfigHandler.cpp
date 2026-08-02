@@ -152,8 +152,8 @@ bool SerialConfigHandler::handleSet(const String &up, const String &raw) {
 // Serial-only. Creates and persists process group configurations.
 // Group IDs are immutable after setup.
 //
-// SETUP WTT ID:FG1,W:W1,T:T1         create WTT group
-// SETUP IRR ID:IG1,G:G1,N:15,V:4,M:1 create irrigation group
+// SETUP WTG ID:WTG1,W:W1,T:T1         create WTT group
+// SETUP IVG ID:IVG1,G:G1,M:1 create irrigation group
 // SETUP SHOW                          list all configured groups
 // SETUP DEL <id>                      delete a group config
 bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
@@ -179,7 +179,8 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
   }
 
   // ── SETUP WTT ID:x,W:W1,T:T1 ───────────────────────────────────────────
-  if (body.startsWith("WTT ")) {
+  // SETUP WTG (preferred) / SETUP WTT (legacy alias)
+  if (body.startsWith("WTG ") || body.startsWith("WTT ")) {
     String params = body.substring(4); params.trim();
     WTTGroupConfig cfg;
 
@@ -203,7 +204,7 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
 
     if (!cfg.isValid()) {
       Serial.println("[Setup] ❌ WTT requires ID:, W: and T: fields");
-      Serial.println("[Setup]    Example: SETUP WTT ID:FG1,W:W1,T:T1");
+      Serial.println("[Setup]    Example: SETUP WTG ID:WTG1,W:W1,T:T1");
       return true;
     }
     // Validate values
@@ -254,7 +255,7 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
     } }
 
     // Parse: <groupId>,N:<node>,V:<v1>,<v2>,...
-    // Example: IG1,N:1,V:2,3   or   IG1,N:2,V:4
+    // Example: IVG1,N:1,V:2,3   or   IVG1,N:2,V:4
     String groupId;
     uint8_t nodeId = 0;
     uint8_t valves[MAX_VALVES_PER_NODE] = {};
@@ -290,7 +291,7 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
 
     if (groupId.length() == 0 || nodeId == 0 || valveCount == 0) {
       Serial.println("[Setup] ❌ Usage: SETUP NODE <id>,N:<node>,V:<v1>,<v2>...");
-      Serial.println("[Setup]   Example: SETUP NODE IG1,N:1,V:2,3");
+      Serial.println("[Setup]   Example: SETUP NODE IVG1,N:1,V:2,3");
       return true;
     }
     if (nodeId < 1 || nodeId > 15) {
@@ -300,7 +301,7 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
     // ── Validate group exists before adding nodes ─────────────────────
     if (!_storage.fileExists("/process/irr_" + groupId + ".json")) {
       Serial.println("[Setup] ❌ Group '" + groupId + "' not found.");
-      Serial.println("[Setup]    Create it first: SETUP IRR ID:" + groupId + ",G:G1");
+      Serial.println("[Setup]    Create it first: SETUP IVG ID:" + groupId + ",G:G1");
       return true;
     }
 
@@ -332,7 +333,8 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
   // Step 1: Creates the irrigation group (pump config).
   // After this, use SETUP NODE <id>,N:x,V:y to add nodes.
   // The group becomes available on all channels immediately after creation.
-  if (body.startsWith("IRR ")) {
+  // SETUP IVG (preferred) / SETUP IRR (legacy alias)
+  if (body.startsWith("IVG ") || body.startsWith("IRR ")) {
     String params = body.substring(4); params.trim();
     IrrGroupConfig cfg;
 
@@ -355,7 +357,7 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
 
     if (!cfg.isValid()) {
       Serial.println("[Setup] ❌ IRR requires ID: and G: fields");
-      Serial.println("[Setup]    Example: SETUP IRR ID:IG1,G:G1,M:1");
+      Serial.println("[Setup]    Example: SETUP IRR ID:IVG1,G:G1,M:1");
       return true;
     }
     if (cfg.pumpId != "G1" && cfg.pumpId != "G2") {
@@ -377,10 +379,10 @@ bool SerialConfigHandler::handleSetup(const String &up, const String &raw) {
 
   Serial.println("[Setup] Unknown SETUP command.");
   Serial.println("[Setup] Commands:");
-  Serial.println("[Setup]   SETUP WTT ID:FG1,W:W1,T:T1");
-  Serial.println("[Setup]   SETUP IRR  ID:IG1,G:G1,M:1");
-  Serial.println("[Setup]   SETUP NODE IG1,N:1,V:2,3");
-  Serial.println("[Setup]   SETUP NODE IG1,N:2,V:4");
+  Serial.println("[Setup]   SETUP WTG ID:WTG1,W:W1,T:T1");
+  Serial.println("[Setup]   SETUP IVG  ID:IVG1,G:G1,M:1");
+  Serial.println("[Setup]   SETUP NODE IVG1,N:1,V:2,3");
+  Serial.println("[Setup]   SETUP NODE IVG1,N:2,V:4");
   Serial.println("[Setup]   SETUP SHOW");
   Serial.println("[Setup]   SETUP DEL <id>");
   return true;
@@ -431,8 +433,8 @@ void SerialConfigHandler::printHelp() const {
     "SET HTTP_PORT   <n>           HTTP API port\n"
     "\n"
     "=== PROCESS GROUP SETUP (Serial only) ===\n"
-    "SETUP WTT ID:<id>,W:W1|W2,T:T1|T2      Create WTT group\n"
-    "SETUP IRR  ID:<id>,G:G1|G2[,M:1]        Create irrigation group\n"
+    "SETUP WTG ID:<id>,W:W1|W2,T:T1|T2       Create water tank group\n"
+    "SETUP IVG  ID:<id>,G:G1|G2[,M:1]        Create irrigation valve group\n"
     "SETUP NODE <id>,N:<node>,V:<v1>,<v2>...  Add node+valves to group\n"
     "SETUP NODE DEL <id>,N:<node>             Remove node from group\n"
     "SETUP SHOW                              List all groups\n"

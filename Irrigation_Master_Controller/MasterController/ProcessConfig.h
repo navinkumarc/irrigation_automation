@@ -12,12 +12,12 @@
 //   /process/irr_<id>.json   — Irrigation group config
 //
 // ── WTT group config fields ────────────────────────────────────────────────
-//   id       : user-defined (e.g. "FG1", "FG2") — immutable after setup
+//   id       : user-defined (e.g. "WTG1", "WTG2") — immutable after setup
 //   pumpId   : "W1" or "W2"
 //   tankId   : "T1" or "T2"
 //
 // ── IRR group config fields ────────────────────────────────────────────────
-//   id       : user-defined (e.g. "IG1", "IG2") — immutable after setup
+//   id       : user-defined (e.g. "IVG1", "IVG2") — immutable after setup
 //   pumpId   : "G1" or "G2"
 //   minValves: minimum open valves required to run pump (default 1)
 //   maxNodes : max nodes in this group (default 15)
@@ -30,7 +30,7 @@
 
 // ─── WTT group config ─────────────────────────────────────────────────────────
 struct WTTGroupConfig {
-  String id;          // Group ID e.g. "FG1"
+  String id;          // Group ID e.g. "WTG1"
   String pumpId;      // "W1" or "W2"
   String tankId;      // "T1" or "T2"
   bool   configured = false;
@@ -66,19 +66,19 @@ struct IrrNodeEntry {
 // The IrrGroupConfig holds a runtime-loaded copy in nodes[].
 //
 // Setup sequence (Serial only):
-//   SETUP NODE IG1,N:1,V:2,3        add node 1, valves 2 and 3 to group IG1
-//   SETUP NODE IG1,N:2,V:4          add node 2, valve 4
-//   SETUP NODE IG1,N:15,V:2,3       add node 15, valves 2 and 3
-//   SETUP IRR ID:IG1,G:G1,M:1       create group (references above nodes)
+//   SETUP NODE IVG1,N:1,V:2,3        add node 1, valves 2 and 3 to group IVG1
+//   SETUP NODE IVG1,N:2,V:4          add node 2, valve 4
+//   SETUP NODE IVG1,N:15,V:2,3       add node 15, valves 2 and 3
+//   SETUP IRR ID:IVG1,G:G1,M:1       create group (references above nodes)
 //
-// To remove a node:  SETUP NODE DEL IG1,N:1
+// To remove a node:  SETUP NODE DEL IVG1,N:1
 // To view:          SETUP SHOW
 
 #define MAX_NODES_PER_GROUP  15
 #define MAX_VALVES_PER_NODE   4
 
 struct IrrGroupConfig {
-  String       id;                              // Group ID e.g. "IG1"
+  String       id;                              // Group ID e.g. "IVG1"
   String       pumpId;                          // "G1" or "G2"
   uint8_t      minValves  = 1;                  // Min open valves for pump
   uint8_t      nodeCount  = 0;

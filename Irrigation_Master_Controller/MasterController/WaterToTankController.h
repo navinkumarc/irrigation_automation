@@ -5,7 +5,7 @@
 // water-source filling operations.
 //
 // ── What WaterToTankController owns ───────────────────────────────────────────────
-//   • Group identity: FG1 or FG2
+//   • Group identity: WTG1 or WTG2
 //   • Pointer to WSPController (pump hardware)
 //   • Pointer to TankManager (tank sensors)
 //   • Fill logic: AUTO mode wires tank callbacks to pump start/stop
@@ -18,19 +18,19 @@
 //   • WSPController becomes pure pump GPIO (start/stop/process)
 //
 // ── Modes ─────────────────────────────────────────────────────────────────
-//   MANUAL    FG1 ON / FG1 OFF
-//   AUTO      FG1 AUTO — pump driven by tank sensor state
+//   MANUAL    WTG1 ON / WTG1 OFF
+//   AUTO      WTG1 AUTO — pump driven by tank sensor state
 //   SCHEDULE  Driven by WaterFillSchedule (via PumpScheduleManager)
 //
 // ── Commands (any channel) ─────────────────────────────────────────────────
-//   FG1 ON        start pump (MANUAL)
-//   FG1 OFF       stop pump
-//   FG1 AUTO      switch to sensor-driven AUTO mode
-//   FG1 STATUS    show pump state + tank state
+//   WTG1 ON        start pump (MANUAL)
+//   WTG1 OFF       stop pump
+//   WTG1 AUTO      switch to sensor-driven AUTO mode
+//   WTG1 STATUS    show pump state + tank state
 //
 // ── Config commands ────────────────────────────────────────────────────────
-//   FG ADD FG1,W:W1,T:T1   create fill group FG1 = pump W1 + tank T1
-//   FG LIST                list all fill groups
+//   WTG ADD WTG1,W:W1,T:T1   create water tank group WTG1 = pump W1 + tank T1
+//   FG LIST                list all water tank groups
 
 #ifndef WATER_TO_TANK_CONTROLLER_H
 #define WATER_TO_TANK_CONTROLLER_H
@@ -44,14 +44,14 @@
 // Forward declarations
 class WSPController;
 
-// ─── Fill group operating mode ────────────────────────────────────────────────
+// ─── Water tank group operating mode ────────────────────────────────────────────────
 enum class WTTMode {
   MANUAL,    // Direct ON/OFF command
   AUTO,      // Driven by tank sensors
   SCHEDULE   // Driven by PumpScheduleManager
 };
 
-// ─── Fill group state ─────────────────────────────────────────────────────────
+// ─── Water tank group state ─────────────────────────────────────────────────────────
 enum class WTTState {
   IDLE,      // Pump off, waiting
   RUNNING,   // Pump on, filling tank
@@ -62,7 +62,7 @@ enum class WTTState {
 
 // ─── WaterToTankController ───────────────────────────────────────────────────────────
 class WaterToTankController {
-  const char    *_id;                    // "FG1" or "FG2"
+  const char    *_id;                    // "WTG1" or "WTG2"
   WSPController *_pump    = nullptr;     // Well pump controller
   TankManager   *_tank    = nullptr;     // Storage tank
 
@@ -87,7 +87,7 @@ class WaterToTankController {
   void autoProcess();
 
 public:
-  WaterToTankController(const char *id = "FG1") : _id(id) {}
+  WaterToTankController(const char *id = "WTG1") : _id(id) {}
 
   // ── Setup ────────────────────────────────────────────────────────────────
   // Call once after creating pump and tank objects

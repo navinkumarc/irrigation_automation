@@ -157,8 +157,16 @@ void PowerMonitor::updateMains() {
   } else if (trendV() > 0.004f) {
     _mainsOn        = true;               // rising within the ambiguous band
     _mainsKnownOnce = true;
+  } else if (!_mainsKnownOnce) {
+    // Booting inside the ambiguous band with no prior state and no clear
+    // trend. Returning UNKNOWN forever is useless, so make a best guess by
+    // splitting the band: a resting cell usually sits below the midpoint,
+    // a charger usually holds it above. Hysteresis takes over afterwards.
+    _mainsOn        = (_voltage >= (PM_MAINS_USB_CERTAIN +
+                                    PM_MAINS_BATT_CERTAIN) / 2.0f);
+    _mainsKnownOnce = true;
   }
-  // else: ambiguous band, no clear trend -> keep the previous determination
+  // else: ambiguous band with a prior determination -> keep it
 #endif
 }
 

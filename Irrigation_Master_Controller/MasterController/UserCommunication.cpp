@@ -122,9 +122,12 @@ CommandResult UserCommunication::dispatchCommand(const String &raw,
   if ((cmd.startsWith("G1 ") || cmd.startsWith("G2 ")) && cmd.indexOf("I:") >= 0)
     return handleScheduleCommand(raw);
 
-  // ── Fill group commands: FG1/FG2 ON|OFF|AUTO|STATUS ──────────────────
-  if (cmd.startsWith("FG1 ") || cmd.startsWith("FG2 ")
-   || cmd == "FG1" || cmd == "FG2")
+  // ── Water tank group commands: WTG1/WTG2 ON|OFF|AUTO|STATUS ──────────────────
+  // WTG1/WTG2 — water tank groups. FG1/FG2 accepted as legacy aliases.
+  if (cmd.startsWith("WTG1 ") || cmd.startsWith("WTG2 ")
+   || cmd == "WTG1" || cmd == "WTG2"
+   || cmd.startsWith("FG1 ")  || cmd.startsWith("FG2 ")
+   || cmd == "FG1"  || cmd == "FG2")
     return handlePumpCommand(raw);
 
   // ── Tank status: T1|T2 STATUS ─────────────────────────────────────────
@@ -472,46 +475,51 @@ String UserCommunication::getHealthStatus() const {
 // ─── Help text ────────────────────────────────────────────────────────────────
 String UserCommunication::getHelpText() const {
   return String(
-  // ── Device ─────────────────────────────
-  "STATUS          device info & channels\n"
-  "STATS           heap & uptime\n"
-  "CHECK           health check\n"
-  "RESTART         reboot\n"
-  // ── Power ──────────────────────────────
-  "POWER           mains on/off + battery + live nodes\n"
-  "POWER M         master only\n"
-  "POWER N1        node 1 power\n"
-  "POWER N1,N2     nodes 1 & 2 power\n"
-  "POWER M N1,N2   master + nodes\n"
-  // ── Water-to-Tank ───────────────────────
-  "FG1 ON|OFF|AUTO fill group 1 (W1+T1)\n"
-  "FG2 ON|OFF|AUTO fill group 2 (W2+T2)\n"
-  "FG1 STATUS      FG1:RUNNING(AUTO) T1:FILLING\n"
-  "T1 STATUS       tank level EMPTY|FILLING|FULL\n"
-  // ── Irrigation ──────────────────────────
-  "G1 ON|OFF       irrigation pump 1\n"
-  "G2 ON|OFF       irrigation pump 2\n"
-  "PUMP STATUS     all pumps & tanks\n"
-  "NODES           connected nodes status\n"
-  // ── Irrigation Schedule ─────────────────
-  "SCHEDULES       list all\n"
-  "ISCH IG1 I:id,T:HH:MM,R:W,D:42,Q:n.v.m\n"
-  "ISDL <id>       delete\n"
-  "START <id>      run now\n"
-  "STOP            stop sequence\n"
-  // ── Fill/Pump Schedule ──────────────────
-  "WSCH FG1 I:id,T:HH:MM,R:D,M:90\n"
-  "WSCH LIST       list\n"
-  "WSCH STATUS     next runs\n"
-  "DEL FG1:id      delete\n"
-  "DIS|ENA FG1:id  disable|enable\n"
-  // ── Node ────────────────────────────────
-  "NODE <id> <cmd> send to node\n"
-  // ── Setup (Serial only) ─────────────────
-  "SETUP IRR ID:IG1,G:G1,M:1\n"
-  "SETUP NODE IG1,N:1,V:2,3\n"
-  "SETUP WTT ID:FG1,W:W1,T:T1\n"
-  "SETUP SHOW|DEL <id>\n"
-  "HELP            this list\n"
+  "== DEVICE ==\n"
+  "STATUS           uptime heap channels net power\n"
+  "STATS            heap & uptime\n"
+  "CHECK            health check\n"
+  "NODES            live node list\n"
+  "RESTART          reboot\n"
+  "== POWER ==\n"
+  "POWER            mains + battery + live nodes\n"
+  "POWER M          master only\n"
+  "POWER N1[,N2]    node power\n"
+  "POWER M N1,N2    master + nodes\n"
+  "POWER RAW        ADC diagnostic\n"
+  "POWER CAL <v>    calibrate to meter reading\n"
+  "== WATER TANK GROUP (WTG) ==\n"
+  "WTG1|WTG2 ON     start pump (manual, ignores tank)\n"
+  "WTG1|WTG2 OFF    stop pump\n"
+  "WTG1|WTG2 AUTO   sensor driven fill\n"
+  "WTG1|WTG2 STATUS state + tank level\n"
+  "T1|T2 STATUS     EMPTY|FILLING|FULL\n"
+  "== IRRIGATION VALVE GROUP (IVG) ==\n"
+  "G1|G2 ON|OFF     irrigation pump direct\n"
+  "G1|G2 STATUS     pump + open valve count\n"
+  "PUMP STATUS      all pumps & tanks\n"
+  "== IVG SCHEDULE ==\n"
+  "SCHEDULES        list all\n"
+  "ISCH IVG1 I:id,T:HH:MM,R:D|W|O[,D:mask],Q:n.v.m-n.v.m\n"
+  "ISDL <id>        delete\n"
+  "START <id>       run now\n"
+  "STOP             stop sequence\n"
+  "== WTG SCHEDULE ==\n"
+  "WSCH WTG1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
+  "WSCH LIST        list\n"
+  "WSCH STATUS      next runs\n"
+  "DEL WTG1:id      delete\n"
+  "DIS|ENA WTG1:id  disable|enable\n"
+  "== NODE ==\n"
+  "NODE <id> <cmd>  send to node\n"
+  "== SETUP (Serial only) ==\n"
+  "SETUP WTG ID:WTG1,W:W1|W2,T:T1|T2\n"
+  "SETUP IVG ID:IVG1,G:G1|G2[,M:minValves]\n"
+  "SETUP NODE IVG1,N:<node>,V:<v1>,<v2>\n"
+  "SETUP NODE DEL IVG1,N:<node>\n"
+  "SETUP SHOW | SETUP DEL <id>\n"
+  "D:mask Mon2 Tue4 Wed8 Thu16 Fri32 Sat64 Sun1\n"
+  "HELP             this list\n"
   );
 }
+

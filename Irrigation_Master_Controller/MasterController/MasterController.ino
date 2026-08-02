@@ -65,12 +65,12 @@ WSPController   wspCtrl2("W2", WSP2_PIN, WSP2_ACTIVE_HIGH); // W2 relay → J3-1
 
 // ── Storage tanks (sensor monitors) ──────────────────────────────────────
 // Sensors: W1(empty=GPIO6 J3-17, full=GPIO5 J3-16)  W2(empty=GPIO2 J3-13, full=GPIO38 J3-11)
-TankManager     tank1("T1");  // Tank 1 — serves fill group FG1
-TankManager     tank2("T2");  // Tank 2 — serves fill group FG2
+TankManager     tank1("T1");  // Tank 1 — serves water tank group WTG1
+TankManager     tank2("T2");  // Tank 2 — serves water tank group WTG2
 
-// ── Water fill groups (WSP pump + tank combined) ──────────────────────────
-WaterToTankController  wttCtrl1("FG1");  // FG1 = W1 pump + T1 tank
-WaterToTankController  wttCtrl2("FG2");  // FG2 = W2 pump + T2 tank
+// ── Water water tank groups (WSP pump + tank combined) ──────────────────────────
+WaterToTankController  wttCtrl1("WTG1");  // WTG1 = W1 pump + T1 tank
+WaterToTankController  wttCtrl2("WTG2");  // WTG2 = W2 pump + T2 tank
 
 // ── Irrigation groups (IPC pump + nodes) ─────────────────────────────────
 // J2 side: G1(relay=47)  G2(relay=48)
@@ -110,9 +110,11 @@ String applyWTTConfig(const WTTGroupConfig &cfg) {
   WSPController         *pump= nullptr;
   TankManager           *tank= nullptr;
 
-  if      (cfg.id == "FG1") wtt = &wttCtrl1;
-  else if (cfg.id == "FG2") wtt = &wttCtrl2;
-  else return "Unknown WTT id: " + cfg.id;
+  // Accept the pre-rename FG1/FG2 ids so configs saved to flash before
+  // the WTG rename still load instead of failing at boot.
+  if      (cfg.id == "WTG1" || cfg.id == "FG1") wtt = &wttCtrl1;
+  else if (cfg.id == "WTG2" || cfg.id == "FG2") wtt = &wttCtrl2;
+  else return "Unknown WTG id: " + cfg.id;
 
   if      (cfg.pumpId == "W1") pump = &wspCtrl;
   else if (cfg.pumpId == "W2") pump = &wspCtrl2;
@@ -129,8 +131,9 @@ String applyWTTConfig(const WTTGroupConfig &cfg) {
 // ─── applyIrrConfig() — wire a loaded IRR config to live objects ──────────────
 String applyIrrConfig(const IrrGroupConfig &cfg) {
   IPController *ipc = nullptr;
-  if      (cfg.id == "IG1" || cfg.pumpId == "G1") ipc = &ipcCtrl;
-  else if (cfg.id == "IG2" || cfg.pumpId == "G2") ipc = &ipcCtrl2;
+  // Accept pre-rename IG1/IG2 ids alongside the new IVG1/IVG2
+  if      (cfg.id=="IVG1" || cfg.id=="IG1" || cfg.pumpId=="G1") ipc = &ipcCtrl;
+  else if (cfg.id=="IVG2" || cfg.id=="IG2" || cfg.pumpId=="G2") ipc = &ipcCtrl2;
   else return "Unknown IRR pump: " + cfg.pumpId;
 
   ipc->setMinOpenValves(cfg.minValves);
@@ -140,7 +143,7 @@ String applyIrrConfig(const IrrGroupConfig &cfg) {
 
   // Wire tank to sequencer for dry-run protection.
   // Load WTT configs to find which tank feeds this irrigation group.
-  // Convention: G1 is typically fed by FG1/T1, G2 by FG2/T2.
+  // Convention: G1 is typically fed by WTG1/T1, G2 by WTG2/T2.
   // If an explicit WTT config mapping exists for this pump, use that tank.
   {
     WTTGroupConfig wttCfgs[MAX_WTT_GROUPS]; int wc = 0;
@@ -331,7 +334,10 @@ void setup() {
   commMgr.getUserComm()->setPumpCommandCallback(
     [](const String &raw) -> CommandResult {
       String up = raw; up.trim(); up.toUpperCase();
-      // WSP commands
+      // Legacy alias: FG1/FG2 were renamed to WTG1/WTG2. Normalise here
+      // so the comparisons below only need the current spelling.
+      if (up.startsWith("FG1")) up = "WTG1" + up.substring(3);
+      if (up.startsWith("FG2")) up = "WTG2" + up.substring(3);
       // ── Mains guard — pumps run on AC mains, block start when it is off ─────
       // Mains is inferred from battery charge state (see PowerMonitor).
       // Only blocks START commands; OFF/STATUS always allowed.
@@ -339,7 +345,7 @@ void setup() {
       // inference is not certain enough to refuse a pump start on its own —
       // a false OFF would strand the irrigation. Wire MAINS_SENSE_PIN to
       // enable the block; until then we warn but proceed.
-      bool isStart = (up=="FG1 ON"||up=="FG2 ON"||up=="G1 ON"||up=="G2 ON");
+      bool isStart = (up=="WTG1 ON"||up=="WTG2 ON"||up=="G1 ON"||up=="G2 ON");
       if (isStart && powerMon.mainsKnown() && !powerMon.isMainsOn()) {
         if (powerMon.mainsIsSensed()) {
           return CommandResult(false, "PUMP",
@@ -349,15 +355,15 @@ void setup() {
                        "(no MAINS_SENSE_PIN wired)");
       }
 
-      // ── Fill group commands: FG1/FG2 (WSP pump + tank) ──────────────────────
-      if (up=="FG1 ON")    { wttCtrl1.setMode(WTTMode::MANUAL); wttCtrl1.start("cmd");  return CommandResult(true,"FG1",wttCtrl1.statusString()); }
-      if (up=="FG1 OFF")   { wttCtrl1.stop("cmd");                                       return CommandResult(true,"FG1",wttCtrl1.statusString()); }
-      if (up=="FG1 AUTO")  { wttCtrl1.setMode(WTTMode::AUTO);                           return CommandResult(true,"FG1",wttCtrl1.statusString()); }
-      if (up=="FG1 STATUS"){                                                               return CommandResult(true,"FG1",wttCtrl1.statusString()); }
-      if (up=="FG2 ON")    { wttCtrl2.setMode(WTTMode::MANUAL); wttCtrl2.start("cmd");  return CommandResult(true,"FG2",wttCtrl2.statusString()); }
-      if (up=="FG2 OFF")   { wttCtrl2.stop("cmd");                                       return CommandResult(true,"FG2",wttCtrl2.statusString()); }
-      if (up=="FG2 AUTO")  { wttCtrl2.setMode(WTTMode::AUTO);                           return CommandResult(true,"FG2",wttCtrl2.statusString()); }
-      if (up=="FG2 STATUS"){                                                               return CommandResult(true,"FG2",wttCtrl2.statusString()); }
+      // ── Water tank group commands: WTG1/WTG2 (WSP pump + tank) ──────────────────────
+      if (up=="WTG1 ON")    { wttCtrl1.setMode(WTTMode::MANUAL); wttCtrl1.start("cmd");  return CommandResult(true,"WTG1",wttCtrl1.statusString()); }
+      if (up=="WTG1 OFF")   { wttCtrl1.stop("cmd");                                       return CommandResult(true,"WTG1",wttCtrl1.statusString()); }
+      if (up=="WTG1 AUTO")  { wttCtrl1.setMode(WTTMode::AUTO);                           return CommandResult(true,"WTG1",wttCtrl1.statusString()); }
+      if (up=="WTG1 STATUS"){                                                               return CommandResult(true,"WTG1",wttCtrl1.statusString()); }
+      if (up=="WTG2 ON")    { wttCtrl2.setMode(WTTMode::MANUAL); wttCtrl2.start("cmd");  return CommandResult(true,"WTG2",wttCtrl2.statusString()); }
+      if (up=="WTG2 OFF")   { wttCtrl2.stop("cmd");                                       return CommandResult(true,"WTG2",wttCtrl2.statusString()); }
+      if (up=="WTG2 AUTO")  { wttCtrl2.setMode(WTTMode::AUTO);                           return CommandResult(true,"WTG2",wttCtrl2.statusString()); }
+      if (up=="WTG2 STATUS"){                                                               return CommandResult(true,"WTG2",wttCtrl2.statusString()); }
       // Tank status
       if (up=="T1 STATUS") return CommandResult(true,"T1",tank1.statusString());
       if (up=="T2 STATUS") return CommandResult(true,"T2",tank2.statusString());
@@ -388,11 +394,11 @@ void setup() {
         return CommandResult(true, "PS", resp);
       }
       return CommandResult(false, "PUMP",
-        "FG1|FG2 ON|OFF|AUTO|STATUS  G1|G2 ON|OFF|STATUS\n"
+        "WTG1|WTG2 ON|OFF|AUTO|STATUS  G1|G2 ON|OFF|STATUS\n"
         "T1|T2 STATUS  PUMP STATUS  POWER STATUS\n"
-        "WSCH FG1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
+        "WSCH WTG1 I:id,T:HH:MM,R:D|W|O[,D:mask][,M:min]\n"
         "ISCH G1 I:id,T:HH:MM,R:W,D:42,Q:n.v.min-n.v.min\n"
-        "DEL/DIS/ENA FG1:id | WSCH LIST|STATUS");
+        "DEL/DIS/ENA WTG1:id | WSCH LIST|STATUS");
     });
 
   // ScheduleManager needs userComm access for sending notifications.
@@ -422,7 +428,7 @@ void setup() {
     [] { return digitalRead(WSP2_TANK_FULL_PIN)  == LOW; });
 #endif
 
-  // ── Fill groups — bind pump + tank ────────────────────────────────────────
+  // ── Water tank groups — bind pump + tank ────────────────────────────────────────
   wttCtrl1.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
   // wttCtrl1 init done by applyWTTConfig() from saved config
   wttCtrl2.setAlertCallback([](const String &m, const String &s){ commMgr.sendAlert(m,s); });
@@ -535,8 +541,8 @@ void loop() {
   //   • WiFi reconnect
   //   • Inbound queue drain
   commMgr.process();
-  wttCtrl1.process();   // drives WSP pump + tank sensor for FG1
-  wttCtrl2.process();   // drives WSP pump + tank sensor for FG2
+  wttCtrl1.process();   // drives WSP pump + tank sensor for WTG1
+  wttCtrl2.process();   // drives WSP pump + tank sensor for WTG2
   ipcCtrl.process();  ipcCtrl2.process();
   scheduleMgr.process();   // drives IrrigationSequencer + startIfDue
   pumpSched.process();
