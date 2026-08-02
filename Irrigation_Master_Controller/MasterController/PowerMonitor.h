@@ -105,7 +105,9 @@ class PowerMonitor {
   unsigned long _pollMs            = 30000;
   unsigned long _lastPollMs        = 0;
   bool          _firstRead         = true;
-  float         _calScale          = 0.0f;  // 0 = use PM_SCALE_FACTOR
+  float         _calScale          = 0.0f;  // 0 = use default scale
+  bool          _lastMains         = false; // previous mains state
+  bool          _mainsKnownOnce    = false; // seen at least one valid reading
 
   using AlertCb = std::function<void(const String&, const String&)>;
   AlertCb _alert;
@@ -143,6 +145,21 @@ public:
   }
   bool        isLow()       const { return _percent <= 15; }
   bool        isCritical()  const { return _percent <= 5;  }
+
+  // ── Mains power inference ─────────────────────────────────────────────
+  // The USB adapter is powered from AC mains. If the battery is charging
+  // or held full on USB, the adapter has power → mains is ON.
+  // If the battery is discharging, the adapter is dead → mains is OFF.
+  //
+  // Limitation: with no battery fitted, VBAT floats and the state is
+  // unreliable — mainsKnown() returns false in that case.
+  bool isMainsOn()   const { return isOnUSB(); }
+  bool mainsKnown()  const { return _source != PowerSource::UNKNOWN
+                                    && _voltage > 2.0f; }
+  const char* mainsString() const {
+    if (!mainsKnown()) return "UNKNOWN";
+    return isMainsOn() ? "ON" : "OFF";
+  }
 
   // ── Status string for commands ────────────────────────────────────────────
   String statusString()  const;

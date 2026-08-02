@@ -169,6 +169,17 @@ void PowerMonitor::process() {
   Serial.printf("[PowerMon] %.3fV %d%% | %s | trend:%+.4f\n",
     _voltage, _percent, isOnUSB() ? "USB" : "Battery", trendV());
 
+  // ── Mains transition alert — pumps cannot run without mains ────────────
+  bool mainsNow = isMainsOn();
+  if (mainsKnown() && _mainsKnownOnce && mainsNow != _lastMains) {
+    if (mainsNow)
+      sendAlert("[INFO] Mains power RESTORED — pumps available", SEV_WARNING);
+    else
+      sendAlert("[WARNING] Mains power LOST — pumps unavailable, on battery",
+                SEV_WARNING);
+  }
+  if (mainsKnown()) { _lastMains = mainsNow; _mainsKnownOnce = true; }
+
   if (_chargeState == ChargeState::BATT_LOW && !_lowAlertSent) {
     _lowAlertSent = true;
     sendAlert("[WARNING] Battery low: " + String(_percent) + "% ("
@@ -212,8 +223,9 @@ String PowerMonitor::statusString() const {
     (_chargeState == ChargeState::DISCHARGING)   ? "DISCHARGING" :
     (_chargeState == ChargeState::BATT_LOW)      ? "LOW"         :
     (_chargeState == ChargeState::BATT_CRITICAL) ? "CRITICAL"    : "UNKNOWN";
-  char buf[96];
-  snprintf(buf, sizeof(buf), "%.2fV %d%% | %s | %s", _voltage, _percent, src, st);
+  char buf[128];
+  snprintf(buf, sizeof(buf), "Mains:%s | %.2fV %d%% | %s | %s",
+           mainsString(), _voltage, _percent, src, st);
   return String(buf);
 }
 

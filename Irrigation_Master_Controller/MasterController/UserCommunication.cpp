@@ -478,7 +478,7 @@ String UserCommunication::getHelpText() const {
   "CHECK           health check\n"
   "RESTART         reboot\n"
   // ── Power ──────────────────────────────
-  "POWER           master pwr+battery+live nodes\n"
+  "POWER           mains on/off + battery + live nodes\n"
   "POWER M         master only\n"
   "POWER N1        node 1 power\n"
   "POWER N1,N2     nodes 1 & 2 power\n"

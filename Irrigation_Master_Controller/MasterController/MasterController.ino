@@ -332,6 +332,15 @@ void setup() {
     [](const String &raw) -> CommandResult {
       String up = raw; up.trim(); up.toUpperCase();
       // WSP commands
+      // ── Mains guard — pumps run on AC mains, block start when it is off ─────
+      // Mains is inferred from battery charge state (see PowerMonitor).
+      // Only blocks START commands; OFF/STATUS always allowed.
+      bool isStart = (up=="FG1 ON"||up=="FG2 ON"||up=="G1 ON"||up=="G2 ON");
+      if (isStart && powerMon.mainsKnown() && !powerMon.isMainsOn()) {
+        return CommandResult(false, "PUMP",
+          "Mains OFF — pump start blocked. " + powerMon.statusString());
+      }
+
       // ── Fill group commands: FG1/FG2 (WSP pump + tank) ──────────────────────
       if (up=="FG1 ON")    { wttCtrl1.setMode(WTTMode::MANUAL); wttCtrl1.start("cmd");  return CommandResult(true,"FG1",wttCtrl1.statusString()); }
       if (up=="FG1 OFF")   { wttCtrl1.stop("cmd");                                       return CommandResult(true,"FG1",wttCtrl1.statusString()); }

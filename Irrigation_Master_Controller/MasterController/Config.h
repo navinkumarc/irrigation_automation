@@ -136,8 +136,14 @@
 //  W2 tank full       → J3-10 GPIO39
 //
 // ── Spare GPIO (free for future use) ─────────────────────────────────────
-//  GPIO2  (J3-13)   GPIO26 (J2-15)
-//  GPIO33 (J2-12)   GPIO34 (J2-11)   GPIO38 (J3-11)
+//  GPIO26 (J2-15)   GPIO33 (J2-12)   GPIO34 (J2-11)
+//  GPIO39 (J3-10)   GPIO40 (J3-9)
+//
+// ── Mains power detection ────────────────────────────────────────────────
+//  No dedicated pin needed. Mains presence is inferred from battery state:
+//    Battery CHARGING or FULL-on-USB → USB adapter powered → MAINS ON
+//    Battery DISCHARGING             → no USB power        → MAINS OFF
+//  See PowerMonitor::isMainsOn()
 
 // ── Pin assignments — grouped by function, sequential on same header side ──
 //
