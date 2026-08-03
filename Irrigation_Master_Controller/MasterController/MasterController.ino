@@ -203,6 +203,15 @@ String setupShowAll() {
 }
 
 void setup() {
+  // ── FIRST: force all relay pins to OFF before anything else ──────────────
+  // GPIO3 (W2) is an ESP32-S3 strapping pin — held LOW during boot.
+  // Active-low relay modules see LOW as ON, so the relay fires on every
+  // boot/reset. Killing it here as the very first thing minimises the glitch.
+  pinMode(WSP_PIN,  OUTPUT); digitalWrite(WSP_PIN,  WSP_ACTIVE_HIGH  ? LOW : HIGH);
+  pinMode(WSP2_PIN, OUTPUT); digitalWrite(WSP2_PIN, WSP2_ACTIVE_HIGH ? LOW : HIGH);
+  pinMode(IPC_PIN,  OUTPUT); digitalWrite(IPC_PIN,  IPC_ACTIVE_HIGH  ? LOW : HIGH);
+  pinMode(IPC2_PIN, OUTPUT); digitalWrite(IPC2_PIN, IPC2_ACTIVE_HIGH ? LOW : HIGH);
+
   Serial.begin(SERIAL_BAUD);
   delay(1000);
 
